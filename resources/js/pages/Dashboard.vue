@@ -7,7 +7,7 @@ import PlaceholderPattern from '../components/PlaceholderPattern.vue';
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Dashboard',
-        href: '/dashboard',
+        href: '/mentions',
     },
 ];
 </script>

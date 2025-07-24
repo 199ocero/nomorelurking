@@ -45,4 +45,12 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    /**
+     * Get the Reddit credentials associated with the user.
+     */
+    public function redditCredential()
+    {
+        return $this->hasOne(RedditCredential::class);
+    }
 }
