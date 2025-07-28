@@ -20,8 +20,19 @@ class RedditCredential extends Model
         'token_expires_at' => 'datetime',
     ];
 
+    /**
+     * Get the user that owns the credential.
+     */
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the Reddit keywords associated with the credential.
+     */
+    public function redditKeywords()
+    {
+        return $this->hasMany(RedditKeyword::class);
     }
 }

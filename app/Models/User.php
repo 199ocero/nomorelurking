@@ -53,4 +53,20 @@ class User extends Authenticatable
     {
         return $this->hasOne(RedditCredential::class);
     }
+
+    /**
+     * Get the Reddit keywords associated with the user.
+     */
+    public function redditKeywords()
+    {
+        return $this->hasMany(RedditKeyword::class);
+    }
+
+    /**
+     * Get the Reddit mentions associated with the user.
+     */
+    public function redditMentions()
+    {
+        return $this->hasMany(RedditMention::class);
+    }
 }

@@ -165,3 +165,17 @@
         @apply bg-background text-foreground;
     }
 }
+
+@layer utilities {
+    .scroll::-webkit-scrollbar {
+        @apply h-2 w-2;
+    }
+
+    .scroll::-webkit-scrollbar-thumb {
+        @apply rounded-full bg-zinc-500;
+    }
+
+    .scroll::-webkit-scrollbar-track {
+        @apply bg-transparent;
+    }
+}

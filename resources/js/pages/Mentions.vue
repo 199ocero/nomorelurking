@@ -12,6 +12,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -20,35 +22,27 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router } from '@inertiajs/vue3';
-import { AtSign, Play, Settings, Unlink } from 'lucide-vue-next';
+import { RedditCredential, RedditKeyword, SubredditResult } from '@/types/mentions';
+import { Head, router, useForm } from '@inertiajs/vue3';
+import { AtSign, Check, Edit, Link, Loader2, Play, Plus, Search, Settings, Trash2, Unlink, X } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 
-interface RedditCredential {
-    id: number;
-    reddit_id: string;
-    username: string;
-    token_expires_at: string | null;
-}
-
-interface User {
-    id: number;
-    name: string;
-    email: string;
-    reddit_credential: RedditCredential | null;
-}
-
 interface Props {
-    auth: {
-        user: User;
-    };
+    keywords: RedditKeyword[];
+    credentials: RedditCredential;
 }
 
 const props = defineProps<Props>();
 const isLoading = ref(false);
 const showDisconnectDialog = ref(false);
+const showDeleteKeywordDialog = ref(false);
+const deleteKeywordId = ref<number | null>(null);
+const showKeywords = ref(false);
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -57,7 +51,7 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-const redditCredential = computed(() => props.auth.user.reddit_credential);
+const redditCredential = computed(() => props.credentials);
 const hasRedditConnection = computed(() => !!redditCredential.value);
 
 const connectToReddit = () => {
@@ -83,6 +77,154 @@ const isTokenExpired = computed(() => {
     if (!redditCredential.value?.token_expires_at) return false;
     return new Date(redditCredential.value.token_expires_at) < new Date();
 });
+
+const isModalOpen = ref(false);
+const isEditing = ref(false);
+const processing = ref(false);
+const subredditSearch = ref('');
+const subredditResults = ref<SubredditResult[]>([]);
+const searchTimeout = ref<ReturnType<typeof setTimeout> | null>(null);
+
+// Form data
+const form = useForm({
+    id: null as number | null,
+    keyword: '',
+    reddit_credential_id: props.credentials.id,
+    subreddits: [] as string[],
+    scan_comments: false as boolean,
+    match_whole_word: false as boolean,
+    case_sensitive: false as boolean,
+    is_active: true as boolean,
+});
+
+// Methods
+const openCreateModal = () => {
+    form.reset();
+    isEditing.value = false;
+    isModalOpen.value = true;
+    subredditSearch.value = '';
+    subredditResults.value = [];
+};
+
+const editKeyword = (keyword: RedditKeyword) => {
+    form.id = keyword.id;
+    form.keyword = keyword.keyword;
+    form.reddit_credential_id = keyword.reddit_credential_id;
+    form.subreddits = keyword.subreddits || [];
+    form.scan_comments = keyword.scan_comments;
+    form.match_whole_word = keyword.match_whole_word;
+    form.case_sensitive = keyword.case_sensitive;
+    form.is_active = keyword.is_active;
+
+    isEditing.value = true;
+    isModalOpen.value = true;
+};
+
+const closeModal = () => {
+    isModalOpen.value = false;
+    form.reset();
+    subredditResults.value = [];
+    subredditSearch.value = '';
+};
+
+const submitForm = () => {
+    processing.value = true;
+
+    if (isEditing.value && form.id) {
+        form.put(
+            route('mentions.update-keyword', {
+                keyword: form.id,
+            }),
+            {
+                onSuccess: () => {
+                    closeModal();
+                },
+                onError: () => {
+                    processing.value = false;
+                },
+            },
+        );
+    } else {
+        form.post(route('mentions.store-keyword'), {
+            onSuccess: () => {
+                closeModal();
+            },
+        });
+    }
+};
+
+const showConfirmDeleteKeywordDialog = (id: number) => {
+    showDeleteKeywordDialog.value = true;
+    deleteKeywordId.value = id;
+};
+
+const deleteKeyword = () => {
+    if (deleteKeywordId.value) {
+        router.delete(route('mentions.destroy-keyword', deleteKeywordId.value));
+        showDeleteKeywordDialog.value = false;
+        deleteKeywordId.value = null;
+    }
+};
+
+const isSearching = ref(false);
+
+const searchSubreddits = () => {
+    if (searchTimeout.value) {
+        clearTimeout(searchTimeout.value);
+    }
+
+    if (!subredditSearch.value || !form.reddit_credential_id) {
+        subredditResults.value = [];
+        isSearching.value = false;
+        return;
+    }
+
+    searchTimeout.value = setTimeout(async () => {
+        try {
+            isSearching.value = true;
+
+            const response = await fetch(route('mentions.search-subreddits'), {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 'null',
+                },
+                body: JSON.stringify({
+                    query: subredditSearch.value,
+                    credential_id: form.reddit_credential_id,
+                }),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                subredditResults.value = (data.subreddits || []).sort((a: SubredditResult, b: SubredditResult) => {
+                    return b.subscribers - a.subscribers;
+                });
+            }
+        } catch (error) {
+            console.error('Error searching subreddits:', error);
+        } finally {
+            isSearching.value = false;
+        }
+    }, 500);
+};
+
+// Combined function
+const toggleSubreddit = (subredditName: string) => {
+    const index = form.subreddits.indexOf(subredditName);
+    if (index > -1) {
+        form.subreddits.splice(index, 1);
+    } else {
+        form.subreddits.push(subredditName);
+    }
+
+    if (form.subreddits.length >= 3) {
+        subredditSearch.value = '';
+        subredditResults.value = [];
+    }
+};
 </script>
 
 <template>
@@ -126,17 +268,20 @@ const isTokenExpired = computed(() => {
                 <!-- Connected State - Your existing mentions content goes here -->
                 <div v-else>
                     <!-- Token Expired Warning -->
-                    <Card v-if="isTokenExpired" class="mb-4 border-destructive">
-                        <CardContent class="pt-6">
-                            <div class="flex items-center gap-2">
+                    <Card v-if="isTokenExpired" class="mb-4 border-destructive bg-destructive/5 dark:bg-destructive/10">
+                        <CardContent>
+                            <div className="flex items-center gap-2">
                                 <Badge variant="destructive">Token Expired</Badge>
-                                <p class="text-sm text-muted-foreground">Your Reddit access token has expired. Please reconnect your account.</p>
-                                <Button @click="connectToReddit" size="sm" variant="outline"> Reconnect </Button>
+                                <p className="text-sm text-muted-foreground">
+                                    Looks like your Reddit connection has expired. We usually fix this automatically, but sometimes it needs a little
+                                    help. If things aren’t updating, try reconnecting your account under <strong>Configure</strong> →
+                                    <strong>Reconnect</strong>. While your connection is inactive, keyword monitoring will be paused.
+                                </p>
                             </div>
                         </CardContent>
                     </Card>
 
-                    <Card class="border-none !py-0 shadow-sm">
+                    <Card>
                         <CardHeader>
                             <div class="flex flex-col items-start justify-start gap-2 lg:flex-row lg:items-center lg:justify-between">
                                 <div>
@@ -148,12 +293,12 @@ const isTokenExpired = computed(() => {
                                         <DropdownMenuTrigger as-child>
                                             <Button variant="outline" size="sm" :disabled="isLoading">
                                                 <Settings class="h-4 w-4" />
-                                                Configure
+                                                Settings
                                             </Button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end">
                                             <DropdownMenuLabel>
-                                                <div class="flex items-start gap-1 p-1">
+                                                <div class="flex items-start gap-1">
                                                     <svg
                                                         viewBox="0 0 32 32"
                                                         class="!h-5 !w-5 flex-shrink-0"
@@ -183,14 +328,21 @@ const isTokenExpired = computed(() => {
                                                 </div>
                                             </DropdownMenuLabel>
                                             <DropdownMenuSeparator />
-                                            <DropdownMenuItem>
-                                                <AtSign class="mr-2 h-4 w-4" />
-                                                Keyword
+                                            <DropdownMenuItem @click.prevent="showKeywords = true">
+                                                <AtSign class="h-4 w-4" />
+                                                Keywords
                                             </DropdownMenuItem>
                                             <DropdownMenuSeparator />
-                                            <DropdownMenuItem @click.prevent="showDisconnectDialog = true">
-                                                <Unlink class="mr-2 h-4 w-4" />
+                                            <DropdownMenuItem
+                                                @click.prevent="showDisconnectDialog = true"
+                                                v-if="hasRedditConnection && !isTokenExpired"
+                                            >
+                                                <Unlink class="h-4 w-4" />
                                                 Disconnect
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem @click.prevent="connectToReddit" v-if="hasRedditConnection && isTokenExpired">
+                                                <Link class="h-4 w-4" />
+                                                Reconnect
                                             </DropdownMenuItem>
                                         </DropdownMenuContent>
                                     </DropdownMenu>
@@ -230,5 +382,236 @@ const isTokenExpired = computed(() => {
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>
+
+        <Dialog v-model:open="showKeywords">
+            <DialogContent class="max-h-[90vh] w-full overflow-y-auto md:min-w-3xl lg:min-w-4xl">
+                <DialogHeader>
+                    <DialogTitle>Reddit Keywords</DialogTitle>
+                    <DialogDescription> Manage your Reddit keyword monitoring settings. </DialogDescription>
+                </DialogHeader>
+
+                <!-- Add Button -->
+                <div class="px-2">
+                    <Button
+                        v-if="props.keywords.length > 0"
+                        @click="openCreateModal"
+                        variant="ghost"
+                        class="h-12 w-full border border-dashed border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+                    >
+                        <Plus class="mr-2 h-4 w-4" />
+                        Add keyword
+                    </Button>
+                </div>
+
+                <!-- Keywords List -->
+                <div class="scroll max-h-96 space-y-4 overflow-y-auto px-2">
+                    <div v-if="props.keywords.length === 0" class="py-8 text-center">
+                        <p class="mb-4 text-muted-foreground">No keywords configured yet. Click "Add Keyword" to get started.</p>
+                        <Button @click="openCreateModal" class="gap-2">
+                            <Plus class="h-4 w-4" />
+                            Add Keyword
+                        </Button>
+                    </div>
+
+                    <template v-else>
+                        <!-- Minimalistic Keyword Cards -->
+                        <div class="space-y-3">
+                            <!-- Keyword Cards -->
+                            <div
+                                v-for="keyword in props.keywords"
+                                :key="keyword.id"
+                                class="group rounded-lg border border-border p-4 transition-colors hover:bg-muted/30"
+                            >
+                                <!-- Header Row -->
+                                <div class="mb-3 flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <div class="h-2 w-2 shrink-0 rounded-full" :class="keyword.is_active ? 'bg-green-500' : 'bg-gray-400'" />
+                                        <h3 class="font-medium text-foreground">{{ keyword.keyword }}</h3>
+                                    </div>
+
+                                    <div class="flex items-center gap-1">
+                                        <Button @click="editKeyword(keyword)" variant="outline" size="sm">
+                                            <Edit class="h-0.5 w-0.5" />
+                                        </Button>
+                                        <Button @click="showConfirmDeleteKeywordDialog(keyword.id)" variant="outline" size="sm">
+                                            <Trash2 class="h-1 w-0.5 text-destructive" />
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                <!-- Details Row -->
+                                <div class="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                                    <span class="flex items-center gap-1">
+                                        <template v-if="keyword.subreddits.length > 0">
+                                            {{ keyword.subreddits.join(', ') }}
+                                        </template>
+                                        <template v-else> All subreddits </template>
+                                        <Check class="h-4 w-4 text-green-600 dark:text-green-400" />
+                                    </span>
+
+                                    <Separator orientation="vertical" class="!h-6" />
+
+                                    <span class="flex items-center gap-1">
+                                        Comments
+                                        <Check v-if="keyword.scan_comments" class="h-4 w-4 text-green-600 dark:text-green-400" />
+                                        <X v-else class="h-4 w-4 text-red-600 dark:text-red-400" />
+                                    </span>
+
+                                    <Separator orientation="vertical" class="!h-6" />
+                                    <span class="flex items-center gap-1">
+                                        Whole word
+                                        <Check v-if="keyword.match_whole_word" class="h-4 w-4 text-green-600 dark:text-green-400" />
+                                        <X v-else class="h-4 w-4 text-red-600 dark:text-red-400" />
+                                    </span>
+
+                                    <Separator orientation="vertical" class="!h-6" />
+                                    <span class="flex items-center gap-1">
+                                        Case sensitive
+                                        <Check v-if="keyword.case_sensitive" class="h-4 w-4 text-green-600 dark:text-green-400" />
+                                        <X v-else class="h-4 w-4 text-red-600 dark:text-red-400" />
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </DialogContent>
+        </Dialog>
+
+        <!-- Add/Edit Modal -->
+        <Dialog v-model:open="isModalOpen">
+            <DialogContent class="max-h-[90vh] w-full overflow-y-auto md:min-w-3xl lg:min-w-4xl">
+                <DialogHeader>
+                    <DialogTitle>{{ isEditing ? 'Edit' : 'Add' }} Keyword</DialogTitle>
+                    <DialogDescription> Configure your Reddit keyword monitoring settings. </DialogDescription>
+                </DialogHeader>
+
+                <form @submit.prevent="submitForm" class="space-y-6">
+                    <!-- Keyword Input -->
+                    <div class="space-y-2">
+                        <Label for="keyword">Keyword</Label>
+                        <Input id="keyword" v-model="form.keyword" placeholder="Enter keyword to monitor" />
+                        <p v-if="form.errors.keyword" class="text-sm text-red-500">{{ form.errors.keyword }}</p>
+                    </div>
+
+                    <div class="space-y-2">
+                        <Label>Subreddits (Optional)</Label>
+                        <div class="space-y-3">
+                            <div class="flex gap-2">
+                                <div class="relative flex-1">
+                                    <Input
+                                        v-model="subredditSearch"
+                                        placeholder="Search for subreddits..."
+                                        @input="searchSubreddits"
+                                        :disabled="isSearching || form.subreddits.length >= 3"
+                                    />
+                                    <Search
+                                        v-if="!isSearching"
+                                        class="absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 transform text-muted-foreground"
+                                    />
+                                    <Loader2
+                                        v-else
+                                        class="absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 transform animate-spin text-muted-foreground"
+                                    />
+                                </div>
+                            </div>
+
+                            <!-- Subreddit Search Results -->
+                            <div
+                                v-if="subredditResults.length > 0 && form.subreddits.length < 3"
+                                class="scroll max-h-48 overflow-y-auto rounded-md border p-3"
+                            >
+                                <div class="space-y-1">
+                                    <div
+                                        v-for="subreddit in subredditResults"
+                                        :key="subreddit.name"
+                                        class="flex cursor-pointer items-center justify-between rounded p-2 hover:bg-muted"
+                                        :class="{
+                                            'cursor-not-allowed opacity-50': form.subreddits.length >= 3 && !form.subreddits.includes(subreddit.name),
+                                        }"
+                                        @click="toggleSubreddit(subreddit.name)"
+                                    >
+                                        <div>
+                                            <div class="font-medium">r/{{ subreddit.name }}</div>
+                                            <div class="text-xs text-muted-foreground">{{ subreddit.subscribers.toLocaleString() }} members</div>
+                                        </div>
+                                        <Check v-if="form.subreddits.includes(subreddit.name)" class="h-3 w-3" />
+                                        <Plus v-else-if="form.subreddits.length < 3" class="h-3 w-3" />
+                                        <span v-else class="text-xs text-muted-foreground">Max reached</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Max limit message -->
+                            <div v-if="form.subreddits.length >= 3" class="rounded-md border border-amber-200 bg-amber-50 p-3">
+                                <p class="text-sm text-amber-800">You've reached the maximum of 3 subreddits. Remove one to add another.</p>
+                            </div>
+
+                            <!-- Selected Subreddits -->
+                            <div v-if="form.subreddits.length > 0" class="space-y-2">
+                                <div class="text-sm font-medium">Selected Subreddits:</div>
+                                <div class="flex flex-wrap gap-2">
+                                    <Badge v-for="subreddit in form.subreddits" :key="subreddit" variant="secondary" class="gap-1 !pr-0.5">
+                                        r/{{ subreddit }}
+                                        <Button type="button" @click="toggleSubreddit(subreddit)" size="icon" variant="ghost" class="h-5 w-5">
+                                            <X class="h-3 w-3" />
+                                        </Button>
+                                    </Badge>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="text-sm text-muted-foreground">You can only add up to 3 subreddits to a keyword</p>
+                    </div>
+
+                    <!-- Settings -->
+                    <div class="space-y-4">
+                        <div class="flex items-center space-x-2">
+                            <Checkbox id="scan_comments" v-model="form.scan_comments" />
+                            <Label for="scan_comments" class="text-sm">
+                                Scan comments to post (only if the keyword appears in the post title or content)
+                            </Label>
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+                            <Checkbox id="match_whole_word" v-model="form.match_whole_word" />
+                            <Label for="match_whole_word" class="text-sm"> Match exact word only (not parts of other words) </Label>
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+                            <Checkbox id="case_sensitive" v-model="form.case_sensitive" />
+                            <Label for="case_sensitive" class="text-sm"> Match case exactly (e.g., "Word" ≠ "word") </Label>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button type="button" variant="outline" @click="closeModal"> Cancel </Button>
+                        <Button type="submit" :disabled="form.processing">
+                            <Loader2 v-if="form.processing" class="mr-2 h-4 w-4 animate-spin" />
+                            {{ isEditing ? 'Update' : 'Add' }} Keyword
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+
+        <!-- Solution 2: Use Teleport to render outside the parent dialog -->
+        <Teleport to="body">
+            <AlertDialog v-model:open="showDeleteKeywordDialog" class="!z-50">
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Keyword</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to delete this keyword? This will remove it from your list of monitored keywords.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel @click="showDeleteKeywordDialog = false">Cancel</AlertDialogCancel>
+                        <AlertDialogAction @click="deleteKeyword" :disabled="isLoading">
+                            {{ isLoading ? 'Deleting...' : 'Delete' }}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </Teleport>
     </AppLayout>
 </template>
