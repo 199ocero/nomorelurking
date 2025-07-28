@@ -14,7 +14,8 @@ return new class extends Migration
         Schema::create('reddit_keywords', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained();
-            $table->foreignId('reddit_credential_id')->constrained('reddit_credentials');
+            $table->foreignId('reddit_credential_id')->nullable()->constrained('reddit_credentials')->nullOnDelete();
+            $table->string('reddit_id');
             $table->string('keyword');
             $table->json('subreddits')->nullable();
             $table->boolean('scan_comments')->default(false);

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\RedditCredential;
+use App\Models\RedditKeyword;
 use GuzzleHttp\Exception\ClientException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -109,7 +110,7 @@ class AuthController extends Controller
                 $tokenExpiresAt = now()->addSeconds($redditUser->expiresIn);
             }
 
-            RedditCredential::updateOrCreate(
+            $redditCredential = RedditCredential::updateOrCreate(
                 [
                     'user_id' => $user->id,
                     'reddit_id' => $redditId,
@@ -123,6 +124,17 @@ class AuthController extends Controller
                     'connected_at' => now(),
                 ]
             );
+
+            if ($redditCredential->reddit_id) {
+                $redditKeyword = RedditKeyword::where('reddit_id', $redditCredential->reddit_id)->exists();
+
+                if ($redditKeyword) {
+                    RedditKeyword::where('reddit_id', $redditCredential->reddit_id)->update([
+                        'user_id' => $user->id,
+                        'reddit_credential_id' => $redditCredential->id,
+                    ]);
+                }
+            }
 
             return redirect(route('mentions'))->with('success', 'Reddit account connected successfully!');
         } catch (\Exception $e) {

@@ -16,36 +16,42 @@ class MentionController extends Controller
 {
     public function index(Request $request)
     {
-        // Get all keywords for the user with only the needed fields
-        $keywords = RedditKeyword::with('credential')
-            ->where('user_id', Auth::id())
-            ->latest()
-            ->select([
-                'id',
-                'reddit_credential_id',
-                'keyword',
-                'subreddits',
-                'scan_comments',
-                'match_whole_word',
-                'case_sensitive',
-                'is_active',
-                'last_checked_at',
-            ])
-            ->get();
 
         // Get all credentials for the user
         $credentials = RedditCredential::where('user_id', Auth::id())
             ->select('id', 'username', 'reddit_id', 'token_expires_at')
             ->first();
 
+        // Get all keywords for the user with only the needed fields
+        $keywords = null;
+
+        if ($credentials) {
+            $keywords = RedditKeyword::with('credential')
+                ->where('user_id', Auth::id())
+                ->where('reddit_id', $credentials->reddit_id)
+                ->latest()
+                ->select([
+                    'id',
+                    'reddit_credential_id',
+                    'keyword',
+                    'subreddits',
+                    'scan_comments',
+                    'match_whole_word',
+                    'case_sensitive',
+                    'is_active',
+                    'last_checked_at',
+                ])
+                ->get();
+        }
+
         return Inertia::render('Mentions', [
-            'keywords' => $keywords,
-            'credentials' => [
+            'keywords' => $keywords ?? [],
+            'credentials' => $credentials ? [
                 'id' => $credentials->id,
                 'reddit_id' => $credentials->reddit_id,
                 'username' => $credentials->username,
                 'token_expires_at' => $credentials->token_expires_at?->toISOString(),
-            ],
+            ] : [],
         ]);
     }
 
@@ -69,6 +75,7 @@ class MentionController extends Controller
             'match_whole_word' => 'boolean',
             'case_sensitive' => 'boolean',
             'is_active' => 'boolean',
+            'reddit_id' => 'string|max:255',
         ]);
 
         $validated['user_id'] = Auth::id();

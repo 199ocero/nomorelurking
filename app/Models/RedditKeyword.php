@@ -9,6 +9,7 @@ class RedditKeyword extends Model
     protected $fillable = [
         'user_id',
         'reddit_credential_id',
+        'reddit_id',
         'keyword',
         'subreddits',
         'scan_comments',

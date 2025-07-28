@@ -52,7 +52,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 const redditCredential = computed(() => props.credentials);
-const hasRedditConnection = computed(() => !!redditCredential.value);
+const hasRedditConnection = computed(() => props.credentials.id != null);
 
 const connectToReddit = () => {
     isLoading.value = true;
@@ -95,6 +95,7 @@ const form = useForm({
     match_whole_word: false as boolean,
     case_sensitive: false as boolean,
     is_active: true as boolean,
+    reddit_id: props.credentials.reddit_id,
 });
 
 // Methods
