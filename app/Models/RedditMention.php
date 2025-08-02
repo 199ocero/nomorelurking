@@ -16,14 +16,29 @@ class RedditMention extends Model
         'reddit_comment_id',
         'subreddit',
         'author',
+        'title',
         'content',
         'url',
         'mention_type',
+        'upvotes',
+        'downvotes',
+        'comment_count',
+        'is_stickied',
+        'is_locked',
+        'sentiment',
+        'sentiment_confidence',
+        'intent',
+        'intent_confidence',
+        'suggested_reply',
+        'reddit_created_at',
         'found_at',
     ];
 
     protected $casts = [
         'found_at' => 'datetime',
+        'reddit_created_at' => 'datetime',
+        'is_stickied' => 'boolean',
+        'is_locked' => 'boolean',
     ];
 
     /**
@@ -39,7 +54,7 @@ class RedditMention extends Model
      */
     public function keyword()
     {
-        return $this->belongsTo(RedditKeyword::class);
+        return $this->belongsTo(RedditKeyword::class, 'reddit_keyword_id');
     }
 
     /**

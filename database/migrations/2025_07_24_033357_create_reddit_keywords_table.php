@@ -21,7 +21,10 @@ return new class extends Migration
             $table->boolean('scan_comments')->default(false);
             $table->boolean('match_whole_word')->default(false);
             $table->boolean('case_sensitive')->default(false);
-            $table->boolean('is_active')->default(true);
+            $table->boolean('alert_enabled')->default(false);
+            $table->json('alert_methods')->nullable();
+            $table->integer('alert_min_upvotes')->nullable();
+            $table->string('alert_sentiment')->nullable();
             $table->timestamp('last_checked_at')->nullable();
             $table->timestamps();
         });

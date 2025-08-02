@@ -15,7 +15,10 @@ class RedditKeyword extends Model
         'scan_comments',
         'match_whole_word',
         'case_sensitive',
-        'is_active',
+        'alert_enabled',
+        'alert_methods',
+        'alert_min_upvotes',
+        'alert_sentiment',
         'last_checked_at',
     ];
 
@@ -24,8 +27,9 @@ class RedditKeyword extends Model
         'scan_comments' => 'boolean',
         'match_whole_word' => 'boolean',
         'case_sensitive' => 'boolean',
-        'is_active' => 'boolean',
         'last_checked_at' => 'datetime',
+        'alert_enabled' => 'boolean',
+        'alert_methods' => 'array',
     ];
 
     /**

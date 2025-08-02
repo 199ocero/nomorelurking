@@ -23,6 +23,9 @@ Route::middleware(['auth'])->group(function () {
 
     // Reddit API integration
     Route::post('/mentions/search-subreddits', [MentionController::class, 'searchSubreddits'])->name('mentions.search-subreddits');
+
+    // Monitoring
+    Route::post('/mentions/start-monitoring', [MentionController::class, 'startMonitoring'])->name('mentions.start-monitoring');
 });
 
 require __DIR__.'/settings.php';

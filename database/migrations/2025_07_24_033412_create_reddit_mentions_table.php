@@ -19,9 +19,21 @@ return new class extends Migration
             $table->string('reddit_comment_id')->nullable();
             $table->string('subreddit')->nullable();
             $table->string('author');
+            $table->string('title')->nullable();
             $table->text('content');
             $table->text('url');
             $table->enum('mention_type', ['post', 'comment']);
+            $table->integer('upvotes')->default(0);
+            $table->integer('downvotes')->default(0);
+            $table->integer('comment_count')->default(0);
+            $table->boolean('is_stickied')->default(false);
+            $table->boolean('is_locked')->default(false);
+            $table->string('sentiment')->nullable();
+            $table->float('sentiment_confidence')->nullable();
+            $table->string('intent')->nullable();
+            $table->float('intent_confidence')->nullable();
+            $table->text('suggested_reply')->nullable();
+            $table->timestamp('reddit_created_at')->nullable();
             $table->timestamp('found_at');
             $table->timestamps();
 

@@ -10,11 +10,15 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "google-gemini-php/client": "^2.5",
+        "google-gemini-php/laravel": "^2.0",
         "inertiajs/inertia-laravel": "^2.0",
         "laravel/framework": "^12.0",
         "laravel/socialite": "^5.22",
         "laravel/tinker": "^2.10.1",
+        "roach-php/laravel": "^3.2",
         "socialiteproviders/reddit": "^4.2",
+        "spatie/browsershot": "^5.0",
         "tightenco/ziggy": "^2.4"
     },
     "require-dev": {

@@ -2,8 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\MonitorRedditKeywords;
+use App\Models\LastFetch;
 use App\Models\RedditCredential;
 use App\Models\RedditKeyword;
+use App\Models\RedditMention;
+use App\Services\RedditTokenService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
@@ -14,6 +18,13 @@ use Inertia\Inertia;
 
 class MentionController extends Controller
 {
+    protected $tokenService;
+
+    public function __construct(RedditTokenService $tokenService)
+    {
+        $this->tokenService = $tokenService;
+    }
+
     public function index(Request $request)
     {
 
@@ -25,33 +36,90 @@ class MentionController extends Controller
         // Get all keywords for the user with only the needed fields
         $keywords = null;
 
+        $mentions = null;
+
+        $lastFetch = null;
+
         if ($credentials) {
-            $keywords = RedditKeyword::with('credential')
+            $keywords = RedditKeyword::query()
                 ->where('user_id', Auth::id())
                 ->where('reddit_id', $credentials->reddit_id)
                 ->latest()
                 ->select([
                     'id',
+                    'user_id',
                     'reddit_credential_id',
+                    'reddit_id',
                     'keyword',
                     'subreddits',
                     'scan_comments',
                     'match_whole_word',
                     'case_sensitive',
-                    'is_active',
+                    'alert_enabled',
+                    'alert_methods',
+                    'alert_min_upvotes',
+                    'alert_sentiment',
                     'last_checked_at',
                 ])
                 ->get();
+
+            $mentions = RedditMention::query()
+                ->with('keyword:id,keyword')
+                ->where('user_id', Auth::id())
+                ->orderByDesc('reddit_created_at')
+                ->select([
+                    'id',
+                    'user_id',
+                    'reddit_keyword_id',
+                    'reddit_post_id',
+                    'reddit_comment_id',
+                    'subreddit',
+                    'author',
+                    'title',
+                    'content',
+                    'url',
+                    'mention_type',
+                    'upvotes',
+                    'downvotes',
+                    'comment_count',
+                    'is_stickied',
+                    'is_locked',
+                    'sentiment',
+                    'sentiment_confidence',
+                    'intent',
+                    'intent_confidence',
+                    'suggested_reply',
+                    'reddit_created_at',
+                    'found_at',
+                ])
+                ->get();
+
+            $lastFetch = LastFetch::where('user_id', Auth::id())
+                ->where('reddit_credential_id', $credentials->id)
+                ->select([
+                    'id',
+                    'user_id',
+                    'reddit_credential_id',
+                    'dispatch_at',
+                    'last_fetched_at',
+                ])
+                ->first();
         }
 
         return Inertia::render('Mentions', [
             'keywords' => $keywords ?? [],
+            'mentions' => $mentions ?? [],
             'credentials' => $credentials ? [
                 'id' => $credentials->id,
                 'reddit_id' => $credentials->reddit_id,
                 'username' => $credentials->username,
                 'token_expires_at' => $credentials->token_expires_at?->toISOString(),
             ] : [],
+            'dispatch_at' => $lastFetch && $lastFetch->dispatch_at?->toISOString() ?? null,
+            'last_fetched_at' => $lastFetch && $lastFetch->last_fetched_at
+                ? $lastFetch->last_fetched_at->toISOString()
+                : null,
+
         ]);
     }
 
@@ -74,7 +142,6 @@ class MentionController extends Controller
             'scan_comments' => 'boolean',
             'match_whole_word' => 'boolean',
             'case_sensitive' => 'boolean',
-            'is_active' => 'boolean',
             'reddit_id' => 'string|max:255',
         ]);
 
@@ -83,6 +150,61 @@ class MentionController extends Controller
         RedditKeyword::create($validated);
 
         return redirect()->back()->with('success', 'Keyword created successfully!');
+    }
+
+    /**
+     * Start monitoring for mentions.
+     */
+    public function startMonitoring()
+    {
+        $credential = RedditCredential::where('user_id', Auth::id())
+            ->first();
+
+        if (! $credential) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Reddit credential not found for this user.',
+            ], 404);
+        }
+
+        $activeKeywordsCount = RedditKeyword::where('reddit_credential_id', $credential->id)->count();
+
+        if ($activeKeywordsCount === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active keywords found to monitor.',
+            ], 422);
+        }
+
+        try {
+            MonitorRedditKeywords::dispatch($credential->user_id, $credential->reddit_id)
+                ->onQueue('reddit-monitoring');
+
+            LastFetch::query()->updateOrCreate([
+                'user_id' => $credential->user_id,
+                'reddit_credential_id' => $credential->id,
+            ], [
+                'dispatch_at' => now(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Reddit keyword monitoring started successfully.',
+                'data' => [
+                    'user_id' => $credential->user_id,
+                    'reddit_id' => $credential->reddit_id,
+                    'keywords_count' => $activeKeywordsCount,
+                    'dispatched_at' => now()->toISOString(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to dispatch Reddit monitoring job: '.$e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to start monitoring. Please try again later.',
+            ], 500);
+        }
     }
 
     /**
@@ -109,7 +231,6 @@ class MentionController extends Controller
             'scan_comments' => 'boolean',
             'match_whole_word' => 'boolean',
             'case_sensitive' => 'boolean',
-            'is_active' => 'boolean',
         ]);
 
         $keyword->update($validated);
@@ -157,8 +278,8 @@ class MentionController extends Controller
         }
 
         // Check if token needs refreshing
-        if ($credential->token_expires_at && $credential->token_expires_at->isPast()) {
-            $refreshed = $this->refreshAccessToken($credential);
+        if ($this->tokenService->tokenNeedsRefresh($credential)) {
+            $refreshed = $this->tokenService->refreshAccessToken($credential);
             if (! $refreshed) {
                 return response()->json(['error' => 'Unable to refresh access token'], 401);
             }
@@ -201,42 +322,6 @@ class MentionController extends Controller
             Log::error('Reddit API error: '.$e->getMessage());
 
             return response()->json(['error' => 'API request failed'], 500);
-        }
-    }
-
-    /**
-     * Refresh the access token for a Reddit credential.
-     */
-    private function refreshAccessToken(RedditCredential $credential)
-    {
-        try {
-            $response = Http::asForm()
-                ->withBasicAuth(
-                    config('services.reddit.client_id'),
-                    config('services.reddit.client_secret')
-                )
-                ->post('https://www.reddit.com/api/v1/access_token', [
-                    'grant_type' => 'refresh_token',
-                    'refresh_token' => Crypt::decryptString($credential->refresh_token),
-                ]);
-
-            if ($response->successful()) {
-                $data = $response->json();
-
-                $credential->update([
-                    'access_token' => Crypt::encryptString($data['access_token']),
-                    'expires_in' => $data['expires_in'],
-                    'token_expires_at' => now()->addSeconds($data['expires_in']),
-                ]);
-
-                return true;
-            }
-
-            return false;
-        } catch (\Exception $e) {
-            Log::error('Token refresh error: '.$e->getMessage());
-
-            return false;
         }
     }
 }

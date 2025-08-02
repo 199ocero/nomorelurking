@@ -14,31 +14,61 @@ export interface User {
 
 export interface RedditKeyword {
     id: number;
+    user_id: number;
     reddit_credential_id: number;
+    reddit_id: string;
     keyword: string;
     subreddits: string[];
     scan_comments: boolean;
     match_whole_word: boolean;
     case_sensitive: boolean;
-    is_active: boolean;
+    alert_enabled: boolean;
+    alert_methods: string[];
+    alert_min_upvotes: number;
+    alert_sentiment: string;
     last_checked_at: string | null;
 }
 
 export interface RedditMention {
     id: number;
+    user_id: number;
     reddit_keyword_id: number;
     reddit_post_id: string;
     reddit_comment_id: string;
     subreddit: string;
     author: string;
+    title: string | null;
     content: string;
     url: string;
     mention_type: 'post' | 'comment';
+    upvotes: number;
+    downvotes: number;
+    comment_count: number;
+    is_stickied: boolean;
+    is_locked: boolean;
+    sentiment: string;
+    sentiment_confidence: number;
+    intent: string;
+    intent_confidence: number;
+    suggested_reply: string | null;
+    reddit_created_at: string;
     found_at: string;
+    keyword: {
+        id: number;
+        keyword: string;
+    };
 }
 
 export interface SubredditResult {
     name: string;
     subscribers: number;
     description: string;
+}
+
+export interface LastFetch {
+    id: number;
+    user_id: number;
+    reddit_credential_id: number;
+    dispatch_at: string | null;
+    last_fetched_at: string | null;
 }
