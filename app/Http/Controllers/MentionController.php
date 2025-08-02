@@ -115,11 +115,8 @@ class MentionController extends Controller
                 'username' => $credentials->username,
                 'token_expires_at' => $credentials->token_expires_at?->toISOString(),
             ] : [],
-            'dispatch_at' => $lastFetch && $lastFetch->dispatch_at?->toISOString() ?? null,
-            'last_fetched_at' => $lastFetch && $lastFetch->last_fetched_at
-                ? $lastFetch->last_fetched_at->toISOString()
-                : null,
-
+            'dispatch_at' => $lastFetch?->dispatch_at ? $lastFetch->dispatch_at->toISOString() : null,
+            'last_fetched_at' => $lastFetch?->last_fetched_at ? $lastFetch->last_fetched_at->toISOString() : null,
         ]);
     }
 

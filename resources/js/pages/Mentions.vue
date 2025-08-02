@@ -369,7 +369,7 @@ const formatDetailedDate = (dateString: string | null | undefined) => {
 const copyToClipboard = async (text: string) => {
     try {
         await navigator.clipboard.writeText(text);
-        toast('Copied!', {
+        toast.success('Copied!', {
             description: 'Suggested reply copied to clipboard',
         });
     } catch (err) {
@@ -951,6 +951,7 @@ const copyToClipboard = async (text: string) => {
                     <div class="bg-grid-pattern absolute inset-0 opacity-5"></div>
 
                     <DialogHeader class="relative space-y-3">
+                        <DialogDescription class="sr-only"> Mention details for {{ selectedMention?.title }} </DialogDescription>
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <DialogTitle class="flex flex-wrap items-center gap-2 text-lg font-semibold">
                                 <!-- Subreddit with icon -->
@@ -1093,7 +1094,7 @@ const copyToClipboard = async (text: string) => {
                                             </p>
                                         </div>
                                     </div>
-                                    <div class="my-2 h-[0.5px] w-full rounded bg-primary/40 dark:bg-primary/10"></div>
+                                    <div class="my-2 h-[0.5px] w-full rounded bg-primary/10"></div>
                                     <div class="prose prose-sm dark:prose-invert max-w-none">
                                         <p class="text-sm leading-relaxed whitespace-pre-wrap text-foreground/80">
                                             {{ selectedMention?.suggested_reply }}
