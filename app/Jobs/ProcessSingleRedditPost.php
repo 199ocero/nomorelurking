@@ -179,6 +179,10 @@ class ProcessSingleRedditPost implements ShouldQueue
             $postId = $postData['id'];
 
             if (RedditMention::where('reddit_post_id', $postId)->exists()) {
+                RedditMention::query()->where('reddit_post_id', $postId)->update([
+                    'reddit_keyword_id' => $keyword->id,
+                ]);
+
                 return false;
             }
 
@@ -198,6 +202,10 @@ class ProcessSingleRedditPost implements ShouldQueue
             $analysisContent = trim($analysisContent);
 
             if (empty($analysisContent)) {
+                return false;
+            }
+
+            if (! $selftext) {
                 return false;
             }
 
@@ -227,6 +235,7 @@ class ProcessSingleRedditPost implements ShouldQueue
                 'reddit_keyword_id' => $keyword->id,
                 'reddit_post_id' => $postId,
                 'reddit_comment_id' => null,
+                'keyword' => $keyword->keyword,
                 'subreddit' => $postData['subreddit'] ?? '',
                 'author' => $postData['author'] ?? '',
                 'title' => $title ? $this->truncateContent($title, 500) : null, // Separate title field

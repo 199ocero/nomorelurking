@@ -57,14 +57,13 @@ class MentionController extends Controller
                     'case_sensitive',
                     'alert_enabled',
                     'alert_methods',
-                    'alert_min_upvotes',
                     'alert_sentiment',
+                    'alert_intent',
                     'last_checked_at',
                 ])
                 ->get();
 
             $mentions = RedditMention::query()
-                ->with('keyword:id,keyword')
                 ->where('user_id', Auth::id())
                 ->orderByDesc('reddit_created_at')
                 ->select([
@@ -73,6 +72,7 @@ class MentionController extends Controller
                     'reddit_keyword_id',
                     'reddit_post_id',
                     'reddit_comment_id',
+                    'keyword',
                     'subreddit',
                     'author',
                     'title',

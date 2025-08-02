@@ -503,8 +503,8 @@ const copyToClipboard = async (text: string) => {
                                 </div>
                             </div>
                         </CardHeader>
-                        <CardContent class="scroll h-[calc(100vh-19rem)] overflow-y-auto pt-0 sm:h-[calc(100vh-17rem)] md:h-[calc(100vh-15rem)]">
-                            <div class="rounded-lg border border-dashed p-6 text-center" v-if="props.keywords.length === 0">
+                        <CardContent class="scroll h-[calc(100vh-19rem)] overflow-y-auto pt-0 sm:h-[calc(100vh-17rem)] md:h-[calc(100vh-14rem)]">
+                            <div class="rounded-lg border border-dashed p-6 text-center" v-if="props.keywords.length === 0 && props.mentions.length === 0">
                                 <AtSign class="mx-auto h-10 w-10 text-muted-foreground" />
                                 <h3 class="mt-4 text-sm font-medium">Let's get you set up!</h3>
                                 <p class="mt-1 mb-4 text-sm text-muted-foreground">
@@ -513,6 +513,18 @@ const copyToClipboard = async (text: string) => {
                                 <Button @click.prevent="showKeywords = true">
                                     <PlusCircle class="h-4 w-4" />
                                     Add Your First Keyword
+                                </Button>
+                                <p class="mt-3 text-xs text-muted-foreground">Pro tip: Add brand names, products, or topics you care about</p>
+                            </div>
+                            <div class="rounded-lg border border-dashed p-6 text-center" v-if="props.keywords.length === 0 && props.mentions.length > 0">
+                                <AtSign class="mx-auto h-10 w-10 text-muted-foreground" />
+                                <h3 class="mt-4 text-sm font-medium">Your keyword monitoring is paused</h3>
+                                <p class="mt-1 mb-4 text-sm text-muted-foreground">
+                                    You currently don't have any active keywords to monitor, but you can still view all your past monitoring results.
+                                </p>
+                                <Button @click.prevent="showKeywords = true">
+                                    <PlusCircle class="h-4 w-4" />
+                                    Add Keywords
                                 </Button>
                                 <p class="mt-3 text-xs text-muted-foreground">Pro tip: Add brand names, products, or topics you care about</p>
                             </div>
@@ -639,7 +651,7 @@ const copyToClipboard = async (text: string) => {
                                                 <span
                                                     class="inline-flex items-center gap-1 rounded-md bg-pink-500/10 px-2 py-1 text-pink-600 dark:text-pink-400"
                                                 >
-                                                    <span class="font-medium">{{ mention.keyword.keyword }}</span>
+                                                    <span class="font-medium">{{ mention.keyword }}</span>
                                                 </span>
                                             </div>
 
@@ -894,13 +906,6 @@ const copyToClipboard = async (text: string) => {
                     <!-- Settings -->
                     <div class="space-y-4">
                         <div class="flex items-center space-x-2">
-                            <Checkbox id="scan_comments" v-model="form.scan_comments" />
-                            <Label for="scan_comments" class="text-sm">
-                                Scan comments to post (only if the keyword appears in the post title or content)
-                            </Label>
-                        </div>
-
-                        <div class="flex items-center space-x-2">
                             <Checkbox id="match_whole_word" v-model="form.match_whole_word" />
                             <Label for="match_whole_word" class="text-sm"> Match exact word only (not parts of other words) </Label>
                         </div>
@@ -922,7 +927,6 @@ const copyToClipboard = async (text: string) => {
             </DialogContent>
         </Dialog>
 
-        <!-- Solution 2: Use Teleport to render outside the parent dialog -->
         <Teleport to="body">
             <AlertDialog v-model:open="showDeleteKeywordDialog" class="!z-50">
                 <AlertDialogContent>
@@ -952,7 +956,7 @@ const copyToClipboard = async (text: string) => {
 
                     <DialogHeader class="relative space-y-3">
                         <DialogDescription class="sr-only"> Mention details for {{ selectedMention?.title }} </DialogDescription>
-                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                             <DialogTitle class="flex flex-wrap items-center gap-2 text-lg font-semibold">
                                 <!-- Subreddit with icon -->
                                 <span
@@ -978,7 +982,7 @@ const copyToClipboard = async (text: string) => {
                                 </span>
                             </DialogTitle>
 
-                            <div class="grid grid-cols-2 gap-2">
+                            <div class="flex flex-wrap gap-2">
                                 <!-- Sentiment badge in header -->
                                 <div class="grid grid-cols-1 gap-1 text-start">
                                     <p class="text-xs text-muted-foreground">Sentiment:</p>
@@ -997,6 +1001,16 @@ const copyToClipboard = async (text: string) => {
                                         <span class="flex items-center gap-1.5 text-xs">
                                             <div :class="getIntentDotClass(selectedMention?.intent)" class="h-1.5 w-1.5 rounded-full"></div>
                                             {{ selectedMention?.intent }} ({{ ((selectedMention?.intent_confidence ?? 0) * 100).toFixed(0) }}%)
+                                        </span>
+                                    </Badge>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-1 text-start">
+                                    <p class="text-xs text-muted-foreground">Keyword:</p>
+                                    <Badge class="bg-pink-500/10 text-pink-700 border-pink-500/20 dark:text-pink-300 dark:border-pink-500/30">
+                                        <span class="flex items-center gap-1.5 text-xs">
+                                            <div class="h-1.5 w-1.5 rounded-full bg-pink-500 animate-pulse"></div>
+                                            {{ selectedMention?.keyword }}
                                         </span>
                                     </Badge>
                                 </div>
@@ -1059,7 +1073,7 @@ const copyToClipboard = async (text: string) => {
                             </div>
                         </div>
 
-                        <p v-if="selectedMention?.title" class="text-sm font-bold text-foreground">
+                        <p v-if="selectedMention?.title" class="text-sm font-bold text-foreground text-start">
                             {{ selectedMention?.title }}
                         </p>
                     </DialogHeader>

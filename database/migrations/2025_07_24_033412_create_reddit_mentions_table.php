@@ -14,9 +14,10 @@ return new class extends Migration
         Schema::create('reddit_mentions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->foreignId('reddit_keyword_id')->constrained('reddit_keywords')->onDelete('cascade');
+            $table->foreignId('reddit_keyword_id')->nullable()->constrained('reddit_keywords')->nullOnDelete();
             $table->string('reddit_post_id')->nullable();
             $table->string('reddit_comment_id')->nullable();
+            $table->string('keyword');
             $table->string('subreddit')->nullable();
             $table->string('author');
             $table->string('title')->nullable();

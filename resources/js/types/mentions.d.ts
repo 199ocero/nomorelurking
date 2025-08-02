@@ -24,8 +24,8 @@ export interface RedditKeyword {
     case_sensitive: boolean;
     alert_enabled: boolean;
     alert_methods: string[];
-    alert_min_upvotes: number;
-    alert_sentiment: string;
+    alert_sentiment: string[];
+    alert_intent: string[];
     last_checked_at: string | null;
 }
 
@@ -35,6 +35,7 @@ export interface RedditMention {
     reddit_keyword_id: number;
     reddit_post_id: string;
     reddit_comment_id: string;
+    keyword: string;
     subreddit: string;
     author: string;
     title: string | null;
@@ -53,10 +54,6 @@ export interface RedditMention {
     suggested_reply: string | null;
     reddit_created_at: string;
     found_at: string;
-    keyword: {
-        id: number;
-        keyword: string;
-    };
 }
 
 export interface SubredditResult {

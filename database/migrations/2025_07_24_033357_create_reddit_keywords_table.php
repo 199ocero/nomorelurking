@@ -23,8 +23,8 @@ return new class extends Migration
             $table->boolean('case_sensitive')->default(false);
             $table->boolean('alert_enabled')->default(false);
             $table->json('alert_methods')->nullable();
-            $table->integer('alert_min_upvotes')->nullable();
-            $table->string('alert_sentiment')->nullable();
+            $table->json('alert_sentiment')->nullable();
+            $table->json('alert_intent')->nullable();
             $table->timestamp('last_checked_at')->nullable();
             $table->timestamps();
         });

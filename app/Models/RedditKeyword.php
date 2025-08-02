@@ -19,6 +19,7 @@ class RedditKeyword extends Model
         'alert_methods',
         'alert_min_upvotes',
         'alert_sentiment',
+        'alert_intent',
         'last_checked_at',
     ];
 
@@ -30,6 +31,8 @@ class RedditKeyword extends Model
         'last_checked_at' => 'datetime',
         'alert_enabled' => 'boolean',
         'alert_methods' => 'array',
+        'alert_sentiment' => 'array',
+        'alert_intent' => 'array',
     ];
 
     /**

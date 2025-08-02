@@ -14,6 +14,7 @@ class RedditMention extends Model
         'reddit_keyword_id',
         'reddit_post_id',
         'reddit_comment_id',
+        'keyword',
         'subreddit',
         'author',
         'title',
