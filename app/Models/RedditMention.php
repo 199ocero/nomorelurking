@@ -33,6 +33,7 @@ class RedditMention extends Model
         'suggested_reply',
         'reddit_created_at',
         'found_at',
+        'persona',
     ];
 
     protected $casts = [
@@ -40,6 +41,7 @@ class RedditMention extends Model
         'reddit_created_at' => 'datetime',
         'is_stickied' => 'boolean',
         'is_locked' => 'boolean',
+        'persona' => 'array',
     ];
 
     /**

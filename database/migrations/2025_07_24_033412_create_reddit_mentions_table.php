@@ -36,6 +36,7 @@ return new class extends Migration
             $table->text('suggested_reply')->nullable();
             $table->timestamp('reddit_created_at')->nullable();
             $table->timestamp('found_at');
+            $table->json('persona')->nullable();
             $table->timestamps();
 
             $table->index(['user_id', 'found_at']);

@@ -69,4 +69,12 @@ class User extends Authenticatable
     {
         return $this->hasMany(RedditMention::class);
     }
+
+    /**
+     * Get the personas associated with the user.
+     */
+    public function personas()
+    {
+        return $this->hasMany(Persona::class);
+    }
 }

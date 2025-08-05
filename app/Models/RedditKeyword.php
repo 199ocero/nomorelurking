@@ -10,6 +10,7 @@ class RedditKeyword extends Model
         'user_id',
         'reddit_credential_id',
         'reddit_id',
+        'persona_id',
         'keyword',
         'subreddits',
         'scan_comments',
@@ -17,9 +18,8 @@ class RedditKeyword extends Model
         'case_sensitive',
         'alert_enabled',
         'alert_methods',
-        'alert_min_upvotes',
-        'alert_sentiment',
-        'alert_intent',
+        'alert_sentiments',
+        'alert_intents',
         'last_checked_at',
     ];
 
@@ -31,8 +31,8 @@ class RedditKeyword extends Model
         'last_checked_at' => 'datetime',
         'alert_enabled' => 'boolean',
         'alert_methods' => 'array',
-        'alert_sentiment' => 'array',
-        'alert_intent' => 'array',
+        'alert_sentiments' => 'array',
+        'alert_intents' => 'array',
     ];
 
     /**
@@ -49,5 +49,13 @@ class RedditKeyword extends Model
     public function credential()
     {
         return $this->belongsTo(RedditCredential::class);
+    }
+
+    /**
+     * Get the persona that owns the keyword.
+     */
+    public function persona()
+    {
+        return $this->belongsTo(Persona::class);
     }
 }

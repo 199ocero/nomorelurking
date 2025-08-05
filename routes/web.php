@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\MentionController;
+use App\Http\Controllers\PersonaController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -26,6 +27,11 @@ Route::middleware(['auth'])->group(function () {
 
     // Monitoring
     Route::post('/mentions/start-monitoring', [MentionController::class, 'startMonitoring'])->name('mentions.start-monitoring');
+
+    // Personas
+    Route::post('/personas', [PersonaController::class, 'store'])->name('personas.store');
+    Route::put('/personas/{persona}', [PersonaController::class, 'update'])->name('personas.update');
+    Route::delete('/personas/{persona}', [PersonaController::class, 'destroy'])->name('personas.destroy');
 });
 
 require __DIR__.'/settings.php';

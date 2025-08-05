@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MultiSelectCombobox from '@/components/MultiSelectCombobox.vue';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -24,10 +25,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import Switch from '@/components/ui/switch/Switch.vue';
+import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
-import { RedditCredential, RedditKeyword, RedditMention, SubredditResult } from '@/types/mentions';
+import { Persona, PersonaSettings, RedditCredential, RedditKeyword, RedditMention, SubredditResult } from '@/types/mentions';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import {
     AtSign,
@@ -46,10 +49,18 @@ import {
     Settings,
     Trash2,
     Unlink,
+    UserRoundCheck,
     X,
+    Info,
 } from 'lucide-vue-next';
-import { computed, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from '@/components/ui/tooltip'
 
 interface Props {
     keywords: RedditKeyword[];
@@ -57,14 +68,18 @@ interface Props {
     mentions: RedditMention[];
     dispatch_at: string | null;
     last_fetched_at: string | null;
+    personas: Persona[];
 }
 
 const props = defineProps<Props>();
 const isLoading = ref(false);
 const showDisconnectDialog = ref(false);
 const showDeleteKeywordDialog = ref(false);
+const showDeletePersonaDialog = ref(false);
 const deleteKeywordId = ref<number | null>(null);
+const deletePersonaId = ref<number | null>(null);
 const showKeywords = ref(false);
+const showPersonas = ref(false);
 const showMentionDialog = ref(false);
 const selectedMention = ref<RedditMention | null>(null);
 
@@ -103,7 +118,9 @@ const isTokenExpired = computed(() => {
 });
 
 const isModalOpen = ref(false);
+const isPersonaModalOpen = ref(false);
 const isEditing = ref(false);
+const isEditingPersona = ref(false);
 const processing = ref(false);
 const subredditSearch = ref('');
 const subredditResults = ref<SubredditResult[]>([]);
@@ -119,6 +136,18 @@ const form = useForm({
     match_whole_word: false as boolean,
     case_sensitive: false as boolean,
     reddit_id: props.credentials.reddit_id,
+    persona_id: null as number | null,
+    alert_enabled: false as boolean,
+    alert_methods: [] as string[],
+    alert_sentiments: [] as string[],
+    alert_intents: [] as string[],
+});
+
+const personaForm = useForm({
+    id: null as number | null,
+    name: '',
+    user_type: '' as 'small_business' | 'marketing' | 'content_creator' | 'customer_support' | 'market_researcher' | 'freelancer' | 'pr_crisis',
+    settings: {} as PersonaSettings,
 });
 
 // Methods
@@ -130,6 +159,12 @@ const openCreateModal = () => {
     subredditResults.value = [];
 };
 
+const openCreatePersonaModal = () => {
+    personaForm.reset();
+    isEditingPersona.value = false;
+    isPersonaModalOpen.value = true;
+};
+
 const editKeyword = (keyword: RedditKeyword) => {
     form.id = keyword.id;
     form.keyword = keyword.keyword;
@@ -138,20 +173,55 @@ const editKeyword = (keyword: RedditKeyword) => {
     form.scan_comments = keyword.scan_comments;
     form.match_whole_word = keyword.match_whole_word;
     form.case_sensitive = keyword.case_sensitive;
+    form.alert_enabled = keyword.alert_enabled;
+    form.alert_methods = keyword.alert_methods || [];
+    form.alert_sentiments = keyword.alert_sentiments || [];
+    form.alert_intents = keyword.alert_intents || [];
+    form.persona_id = keyword.persona_id;
+
+    selectedSentiments.value = Array.isArray(keyword.alert_sentiments) ? keyword.alert_sentiments : [];
+
+    selectedIntents.value = Array.isArray(keyword.alert_intents) ? keyword.alert_intents : [];
+
+    selectedMethods.value = Array.isArray(keyword.alert_methods) ? keyword.alert_methods : [];
 
     isEditing.value = true;
     isModalOpen.value = true;
 };
 
+watch(isModalOpen, (newValue) => {
+    if (!newValue) {
+        form.reset();
+        form.clearErrors();
+        subredditResults.value = [];
+        subredditSearch.value = '';
+        selectedIntents.value = [];
+        selectedMethods.value = [];
+        selectedSentiments.value = [];
+    }
+});
+
+watch(isPersonaModalOpen, (newValue) => {
+    if (!newValue) {
+        personaForm.reset();
+        personaForm.clearErrors();
+    }
+});
+
 const closeModal = () => {
     isModalOpen.value = false;
-    form.reset();
-    subredditResults.value = [];
-    subredditSearch.value = '';
+};
+
+const closePersonaModal = () => {
+    isPersonaModalOpen.value = false;
 };
 
 const submitForm = () => {
     processing.value = true;
+
+    form.alert_sentiments = selectedSentiments.value;
+    form.alert_intents = selectedIntents.value;
+    form.alert_methods = selectedMethods.value;
 
     if (isEditing.value && form.id) {
         form.put(
@@ -176,9 +246,111 @@ const submitForm = () => {
     }
 };
 
+// Reactive settings object
+const personaSettings = reactive<PersonaSettings>({});
+
+// Function to get default settings based on user type
+const getDefaultSettings = (userType: string): PersonaSettings => {
+    const defaults: Record<string, PersonaSettings> = {
+        small_business: {
+            business_name: '',
+            industry_niche: '',
+            business_description: '',
+        },
+        marketing: {
+            brand_name: '',
+            engagement_goal: 'brand_awareness',
+            brand_description: '',
+        },
+        content_creator: {
+            creator_niche: '',
+            engagement_style: 'question_asking',
+        },
+        customer_support: {
+            brand_name: '',
+            product_service: '',
+            support_contact: '',
+            brand_description: '',
+        },
+        market_researcher: {
+            research_focus: '',
+            question_style: 'open_ended',
+        },
+        freelancer: {
+            expertise_area: '',
+            engagement_approach: 'offering_tips',
+        },
+        pr_crisis: {
+            brand_name: '',
+            brand_description: '',
+            escalation_contact: '',
+        },
+    };
+
+    return defaults[userType] || {};
+};
+
+// Reset settings when user type changes
+const resetSettings = (newUserType: string) => {
+    const defaultSettings = getDefaultSettings(newUserType);
+    Object.keys(personaSettings).forEach((key) => {
+        delete personaSettings[key as keyof PersonaSettings];
+    });
+    Object.assign(personaSettings, defaultSettings);
+};
+
+watch(
+    personaSettings,
+    (newSettings: PersonaSettings) => {
+        personaForm.settings = { ...newSettings };
+    },
+    { deep: true },
+);
+
+// Function to populate form when editing
+const editPersona = (persona: Persona) => {
+    personaForm.id = persona.id;
+    personaForm.name = persona.name;
+    personaForm.user_type = persona.user_type;
+
+    // Reset and populate settings
+    Object.keys(personaSettings).forEach((key) => {
+        delete personaSettings[key as keyof PersonaSettings];
+    });
+    Object.assign(personaSettings, persona.settings || getDefaultSettings(persona.user_type));
+
+    isEditingPersona.value = true;
+    isPersonaModalOpen.value = true;
+};
+
+// Submit form function
+const submitPersonaForm = () => {
+    // Ensure settings are updated
+    personaForm.settings = { ...personaSettings };
+
+    if (personaForm.id) {
+        personaForm.put(route('personas.update', personaForm.id), {
+            onSuccess: () => {
+                closePersonaModal();
+            },
+        });
+    } else {
+        personaForm.post(route('personas.store'), {
+            onSuccess: () => {
+                closePersonaModal();
+            },
+        });
+    }
+};
+
 const showConfirmDeleteKeywordDialog = (id: number) => {
     showDeleteKeywordDialog.value = true;
     deleteKeywordId.value = id;
+};
+
+const showConfirmDeletePersonaDialog = (id: number) => {
+    showDeletePersonaDialog.value = true;
+    deletePersonaId.value = id;
 };
 
 const deleteKeyword = () => {
@@ -186,6 +358,14 @@ const deleteKeyword = () => {
         router.delete(route('mentions.destroy-keyword', deleteKeywordId.value));
         showDeleteKeywordDialog.value = false;
         deleteKeywordId.value = null;
+    }
+};
+
+const deletePersona = () => {
+    if (deletePersonaId.value) {
+        router.delete(route('personas.destroy', deletePersonaId.value));
+        showDeletePersonaDialog.value = false;
+        deletePersonaId.value = null;
     }
 };
 
@@ -250,7 +430,6 @@ const toggleSubreddit = (subredditName: string) => {
 };
 
 const startMonitoring = async () => {
-    console.log('start monitoring');
     try {
         const response = await fetch(route('mentions.start-monitoring'), {
             method: 'POST',
@@ -379,6 +558,35 @@ const copyToClipboard = async (text: string) => {
         });
     }
 };
+
+function getError(key: string) {
+    return (personaForm.errors as Record<string, string>)[key];
+}
+
+const sentimentOptions = [
+    { value: 'positive', label: 'Positive' },
+    { value: 'negative', label: 'Negative' },
+    { value: 'neutral', label: 'Neutral' },
+];
+
+const intentOptions = [
+    { value: 'lead', label: 'Lead' },
+    { value: 'competitor', label: 'Competitor' },
+    { value: 'brand_mention', label: 'Brand Mention' },
+    { value: 'feedback', label: 'Feedback' },
+    { value: 'hiring_opportunity', label: 'Hiring Opportunity' },
+    { value: 'irrelevant', label: 'Irrelevant' },
+];
+
+const methodOptions = [
+    { value: 'email', label: 'Email' },
+    { value: 'slack', label: 'Slack' },
+    { value: 'discord', label: 'Discord' },
+];
+
+const selectedSentiments = ref<string[]>([]);
+const selectedIntents = ref<string[]>([]);
+const selectedMethods = ref<string[]>([]);
 </script>
 
 <template>
@@ -482,6 +690,11 @@ const copyToClipboard = async (text: string) => {
                                                 </div>
                                             </DropdownMenuLabel>
                                             <DropdownMenuSeparator />
+                                            <DropdownMenuItem @click.prevent="showPersonas = true">
+                                                <UserRoundCheck class="h-4 w-4" />
+                                                Persona
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
                                             <DropdownMenuItem @click.prevent="showKeywords = true">
                                                 <AtSign class="h-4 w-4" />
                                                 Keywords
@@ -504,7 +717,10 @@ const copyToClipboard = async (text: string) => {
                             </div>
                         </CardHeader>
                         <CardContent class="scroll h-[calc(100vh-19rem)] overflow-y-auto pt-0 sm:h-[calc(100vh-17rem)] md:h-[calc(100vh-14rem)]">
-                            <div class="rounded-lg border border-dashed p-6 text-center" v-if="props.keywords.length === 0 && props.mentions.length === 0">
+                            <div
+                                class="rounded-lg border border-dashed p-6 text-center"
+                                v-if="props.keywords.length === 0 && props.mentions.length === 0"
+                            >
                                 <AtSign class="mx-auto h-10 w-10 text-muted-foreground" />
                                 <h3 class="mt-4 text-sm font-medium">Let's get you set up!</h3>
                                 <p class="mt-1 mb-4 text-sm text-muted-foreground">
@@ -516,7 +732,10 @@ const copyToClipboard = async (text: string) => {
                                 </Button>
                                 <p class="mt-3 text-xs text-muted-foreground">Pro tip: Add brand names, products, or topics you care about</p>
                             </div>
-                            <div class="rounded-lg border border-dashed p-6 text-center" v-if="props.keywords.length === 0 && props.mentions.length > 0">
+                            <div
+                                class="rounded-lg border border-dashed p-6 text-center"
+                                v-if="props.keywords.length === 0 && props.mentions.length > 0"
+                            >
                                 <AtSign class="mx-auto h-10 w-10 text-muted-foreground" />
                                 <h3 class="mt-4 text-sm font-medium">Your keyword monitoring is paused</h3>
                                 <p class="mt-1 mb-4 text-sm text-muted-foreground">
@@ -530,7 +749,7 @@ const copyToClipboard = async (text: string) => {
                             </div>
                             <div
                                 class="rounded-lg border border-dashed p-6 text-center"
-                                v-else-if="props.mentions.length === 0 && !props.dispatch_at"
+                                v-else-if="props.mentions.length === 0 && !props.dispatch_at && props.keywords.length > 0"
                             >
                                 <AtSign class="mx-auto h-10 w-10 text-muted-foreground" />
                                 <h3 class="mt-4 text-sm font-medium">Ready to start monitoring</h3>
@@ -724,7 +943,7 @@ const copyToClipboard = async (text: string) => {
         </AlertDialog>
 
         <Dialog v-model:open="showKeywords">
-            <DialogContent class="scroll max-h-[90vh] w-full overflow-y-auto md:min-w-3xl lg:min-w-4xl">
+            <DialogContent>
                 <DialogHeader>
                     <DialogTitle>Reddit Keywords</DialogTitle>
                     <DialogDescription> Manage your Reddit keyword monitoring settings. </DialogDescription>
@@ -738,18 +957,18 @@ const copyToClipboard = async (text: string) => {
                         variant="ghost"
                         class="h-12 w-full border border-dashed border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
                     >
-                        <Plus class="mr-2 h-4 w-4" />
-                        Add keyword
+                        <Plus class="h-4 w-4" />
+                        Add Keyword
                     </Button>
                 </div>
 
                 <!-- Keywords List -->
                 <div class="scroll max-h-96 space-y-4 overflow-y-auto px-2">
                     <div v-if="props.keywords.length === 0" class="py-8 text-center">
-                        <p class="mb-4 text-muted-foreground">No keywords configured yet. Click "Add Keyword" to get started.</p>
+                        <p class="mb-4 text-muted-foreground">No keywords configured yet. Click "Add Keywords" to get started.</p>
                         <Button @click="openCreateModal" class="gap-2">
                             <Plus class="h-4 w-4" />
-                            Add Keyword
+                            Add Keywords
                         </Button>
                     </div>
 
@@ -763,7 +982,7 @@ const copyToClipboard = async (text: string) => {
                                 class="group rounded-lg border border-border p-4 transition-colors hover:bg-muted/30"
                             >
                                 <!-- Header Row -->
-                                <div class="mb-3 flex items-center justify-between">
+                                <div class="flex items-center justify-between">
                                     <div class="flex items-center gap-3">
                                         <div class="h-2 w-2 shrink-0 rounded-full bg-green-500" />
                                         <h3 class="font-medium text-foreground">{{ keyword.keyword }}</h3>
@@ -778,38 +997,74 @@ const copyToClipboard = async (text: string) => {
                                         </Button>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </DialogContent>
+        </Dialog>
 
-                                <!-- Details Row -->
-                                <div class="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-                                    <span class="flex items-center gap-1">
-                                        <template v-if="keyword.subreddits.length > 0">
-                                            {{ keyword.subreddits.join(', ') }}
-                                        </template>
-                                        <template v-else> All subreddits </template>
-                                        <Check class="h-4 w-4 text-green-600 dark:text-green-400" />
-                                    </span>
+        <Dialog v-model:open="showPersonas">
+            <DialogContent class="scroll max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle>Persona</DialogTitle>
+                    <DialogDescription> Define your persona to shape how the AI suggests replies—tailored to your style. </DialogDescription>
+                </DialogHeader>
 
-                                    <Separator orientation="vertical" class="!h-6" />
+                <!-- Add Button -->
+                <div class="px-2">
+                    <Button
+                        v-if="props.personas.length > 0"
+                        @click="openCreatePersonaModal"
+                        variant="ghost"
+                        class="h-12 w-full border border-dashed border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+                    >
+                        <Plus class="h-4 w-4" />
+                        Add Persona
+                    </Button>
+                </div>
 
-                                    <span class="flex items-center gap-1">
-                                        Comments
-                                        <Check v-if="keyword.scan_comments" class="h-4 w-4 text-green-600 dark:text-green-400" />
-                                        <X v-else class="h-4 w-4 text-red-600 dark:text-red-400" />
-                                    </span>
+                <!-- Keywords List -->
+                <div class="scroll max-h-96 space-y-4 overflow-y-auto px-2">
+                    <div v-if="props.personas.length === 0" class="py-8 text-center">
+                        <p class="mb-4 text-muted-foreground">No personas configured yet. Click "Add Personas" to get started.</p>
+                        <Button @click="openCreatePersonaModal" class="gap-2">
+                            <Plus class="h-4 w-4" />
+                            Add Personas
+                        </Button>
+                    </div>
 
-                                    <Separator orientation="vertical" class="!h-6" />
-                                    <span class="flex items-center gap-1">
-                                        Whole word
-                                        <Check v-if="keyword.match_whole_word" class="h-4 w-4 text-green-600 dark:text-green-400" />
-                                        <X v-else class="h-4 w-4 text-red-600 dark:text-red-400" />
-                                    </span>
+                    <template v-else>
+                        <!-- Minimalistic Keyword Cards -->
+                        <div class="space-y-3">
+                            <!-- Keyword Cards -->
+                            <div
+                                v-for="persona in props.personas"
+                                :key="persona.id"
+                                class="group rounded-lg border border-border p-4 transition-colors hover:bg-muted/30"
+                            >
+                                <!-- Header Row -->
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <div class="h-2 w-2 shrink-0 rounded-full bg-green-500" />
+                                        <div class="flex gap-1 items-center">
+                                            <h3 class="font-medium text-foreground">
+                                                {{ persona.name }}
+                                            </h3>
+                                            <p class="text-xs text-muted-foreground">
+                                                - {{ persona.user_type }}
+                                            </p>
+                                        </div>
+                                    </div>
 
-                                    <Separator orientation="vertical" class="!h-6" />
-                                    <span class="flex items-center gap-1">
-                                        Case sensitive
-                                        <Check v-if="keyword.case_sensitive" class="h-4 w-4 text-green-600 dark:text-green-400" />
-                                        <X v-else class="h-4 w-4 text-red-600 dark:text-red-400" />
-                                    </span>
+                                    <div class="flex items-center gap-1">
+                                        <Button @click="editPersona(persona)" variant="outline" size="sm">
+                                            <Edit class="h-0.5 w-0.5" />
+                                        </Button>
+                                        <Button @click="showConfirmDeletePersonaDialog(persona.id)" variant="outline" size="sm">
+                                            <Trash2 class="h-1 w-0.5 text-destructive" />
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -820,107 +1075,494 @@ const copyToClipboard = async (text: string) => {
 
         <!-- Add/Edit Modal -->
         <Dialog v-model:open="isModalOpen">
-            <DialogContent class="scroll max-h-[90vh] w-full overflow-y-auto md:min-w-3xl lg:min-w-4xl">
+            <DialogContent class="w-full md:min-w-3xl lg:min-w-4xl">
                 <DialogHeader>
                     <DialogTitle>{{ isEditing ? 'Edit' : 'Add' }} Keyword</DialogTitle>
                     <DialogDescription> Configure your Reddit keyword monitoring settings. </DialogDescription>
                 </DialogHeader>
 
-                <form @submit.prevent="submitForm" class="space-y-6">
-                    <!-- Keyword Input -->
-                    <div class="space-y-2">
-                        <Label for="keyword">Keyword</Label>
-                        <Input id="keyword" v-model="form.keyword" placeholder="Enter keyword to monitor" />
-                        <p v-if="form.errors.keyword" class="text-sm text-red-500">{{ form.errors.keyword }}</p>
-                    </div>
+                <form @submit.prevent="submitForm">
+                    <div class="scroll max-h-[60vh] w-full space-y-6 overflow-y-auto p-3">
+                        <!-- Keyword Input -->
+                        <div class="space-y-2">
+                            <Label for="keyword">Keyword</Label>
+                            <Input id="keyword" v-model="form.keyword" placeholder="Enter keyword to monitor" />
+                            <p v-if="form.errors.keyword" class="text-sm text-red-500">{{ form.errors.keyword }}</p>
+                        </div>
 
-                    <div class="space-y-2">
-                        <Label>Subreddits (Optional)</Label>
-                        <div class="space-y-3">
-                            <div class="flex gap-2">
-                                <div class="relative flex-1">
-                                    <Input
-                                        v-model="subredditSearch"
-                                        placeholder="Search for subreddits..."
-                                        @input="searchSubreddits"
-                                        :disabled="isSearching || form.subreddits.length >= 3"
-                                    />
-                                    <Search
-                                        v-if="!isSearching"
-                                        class="absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 transform text-muted-foreground"
-                                    />
-                                    <Loader2
-                                        v-else
-                                        class="absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 transform animate-spin text-muted-foreground"
-                                    />
+                        <div class="space-y-2">
+                            <Label>Subreddits (Optional)</Label>
+                            <div class="space-y-3">
+                                <div class="flex gap-2">
+                                    <div class="relative flex-1">
+                                        <Input
+                                            v-model="subredditSearch"
+                                            placeholder="Search for subreddits..."
+                                            @input="searchSubreddits"
+                                            :disabled="isSearching || form.subreddits.length >= 3"
+                                        />
+                                        <Search
+                                            v-if="!isSearching"
+                                            class="absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 transform text-muted-foreground"
+                                        />
+                                        <Loader2
+                                            v-else
+                                            class="absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 transform animate-spin text-muted-foreground"
+                                        />
+                                    </div>
                                 </div>
-                            </div>
 
-                            <!-- Subreddit Search Results -->
-                            <div
-                                v-if="subredditResults.length > 0 && form.subreddits.length < 3"
-                                class="scroll max-h-48 overflow-y-auto rounded-md border p-3"
-                            >
-                                <div class="space-y-1">
-                                    <div
-                                        v-for="subreddit in subredditResults"
-                                        :key="subreddit.name"
-                                        class="flex cursor-pointer items-center justify-between rounded p-2 hover:bg-muted"
-                                        :class="{
-                                            'cursor-not-allowed opacity-50': form.subreddits.length >= 3 && !form.subreddits.includes(subreddit.name),
-                                        }"
-                                        @click="toggleSubreddit(subreddit.name)"
-                                    >
-                                        <div>
-                                            <div class="font-medium">r/{{ subreddit.name }}</div>
-                                            <div class="text-xs text-muted-foreground">{{ subreddit.subscribers.toLocaleString() }} members</div>
+                                <!-- Subreddit Search Results -->
+                                <div
+                                    v-if="subredditResults.length > 0 && form.subreddits.length < 3"
+                                    class="scroll max-h-48 overflow-y-auto rounded-md border p-3"
+                                >
+                                    <div class="space-y-1">
+                                        <div
+                                            v-for="subreddit in subredditResults"
+                                            :key="subreddit.name"
+                                            class="flex cursor-pointer items-center justify-between rounded p-2 hover:bg-muted"
+                                            :class="{
+                                                'cursor-not-allowed opacity-50':
+                                                    form.subreddits.length >= 3 && !form.subreddits.includes(subreddit.name),
+                                            }"
+                                            @click="toggleSubreddit(subreddit.name)"
+                                        >
+                                            <div>
+                                                <div class="font-medium">r/{{ subreddit.name }}</div>
+                                                <div class="text-xs text-muted-foreground">{{ subreddit.subscribers.toLocaleString() }} members</div>
+                                            </div>
+                                            <Check v-if="form.subreddits.includes(subreddit.name)" class="h-3 w-3" />
+                                            <Plus v-else-if="form.subreddits.length < 3" class="h-3 w-3" />
+                                            <span v-else class="text-xs text-muted-foreground">Max reached</span>
                                         </div>
-                                        <Check v-if="form.subreddits.includes(subreddit.name)" class="h-3 w-3" />
-                                        <Plus v-else-if="form.subreddits.length < 3" class="h-3 w-3" />
-                                        <span v-else class="text-xs text-muted-foreground">Max reached</span>
+                                    </div>
+                                </div>
+
+                                <!-- Max limit message -->
+                                <div v-if="form.subreddits.length >= 3" class="rounded-md border border-amber-200 bg-amber-50 p-3">
+                                    <p class="text-sm text-amber-800">You've reached the maximum of 3 subreddits. Remove one to add another.</p>
+                                </div>
+
+                                <!-- Selected Subreddits -->
+                                <div v-if="form.subreddits.length > 0" class="space-y-2">
+                                    <div class="text-sm font-medium">Selected Subreddits:</div>
+                                    <div class="flex flex-wrap gap-2">
+                                        <Badge v-for="subreddit in form.subreddits" :key="subreddit" variant="secondary" class="gap-1 !pr-0.5">
+                                            r/{{ subreddit }}
+                                            <Button type="button" @click="toggleSubreddit(subreddit)" size="icon" variant="ghost" class="h-5 w-5">
+                                                <X class="h-3 w-3" />
+                                            </Button>
+                                        </Badge>
                                     </div>
                                 </div>
                             </div>
+                            <p class="text-sm text-muted-foreground">You can only add up to 3 subreddits to a keyword</p>
+                        </div>
 
-                            <!-- Max limit message -->
-                            <div v-if="form.subreddits.length >= 3" class="rounded-md border border-amber-200 bg-amber-50 p-3">
-                                <p class="text-sm text-amber-800">You've reached the maximum of 3 subreddits. Remove one to add another.</p>
+                        <div class="space-y-2">
+                            <Label for="persona">Persona</Label>
+                            <Select v-model="form.persona_id" id="persona">
+                                <SelectTrigger class="w-full">
+                                    <SelectValue placeholder="Select persona">
+                                        {{
+                                            (() => {
+                                                const selectedPersona = personas.find((p) => p.id.toString() === form.persona_id?.toString());
+                                                return selectedPersona ? `${selectedPersona.name} - ${selectedPersona.user_type}` : 'Select persona';
+                                            })()
+                                        }}
+                                    </SelectValue>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem v-for="persona in personas" :key="persona.id" :value="persona.id.toString()">
+                                        {{ persona.name }} - {{ persona.user_type }}
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <p class="text-sm text-muted-foreground">
+                                Your persona helps us understand your preferences and give more context about you. This lets us generate replies that are more relevant, helpful, and tailored to your needs. You can create or update your persona anytime in Configure → Persona.
+                            </p>
+                            <p v-if="form.errors.persona_id" class="text-sm text-red-500">
+                                {{ form.errors.persona_id }}
+                            </p>
+                        </div>
+
+                        <div class="space-y-4">
+                            <h3 class="text-lg font-medium">Matching Rules</h3>
+
+                            <div class="flex items-center space-x-2">
+                                <Checkbox id="match_whole_word" v-model="form.match_whole_word" />
+                                <Label for="match_whole_word" class="text-sm"> Match exact word only (not parts of other words) </Label>
                             </div>
 
-                            <!-- Selected Subreddits -->
-                            <div v-if="form.subreddits.length > 0" class="space-y-2">
-                                <div class="text-sm font-medium">Selected Subreddits:</div>
-                                <div class="flex flex-wrap gap-2">
-                                    <Badge v-for="subreddit in form.subreddits" :key="subreddit" variant="secondary" class="gap-1 !pr-0.5">
-                                        r/{{ subreddit }}
-                                        <Button type="button" @click="toggleSubreddit(subreddit)" size="icon" variant="ghost" class="h-5 w-5">
-                                            <X class="h-3 w-3" />
-                                        </Button>
-                                    </Badge>
+                            <div class="flex items-center space-x-2">
+                                <Checkbox id="case_sensitive" v-model="form.case_sensitive" />
+                                <Label for="case_sensitive" class="text-sm"> Match case exactly (e.g., "Word" ≠ "word") </Label>
+                            </div>
+                        </div>
+
+                        <div class="space-y-4">
+                            <h3 class="text-lg font-medium">Alert Settings</h3>
+
+                            <div class="flex items-center space-x-2">
+                                <Switch id="alert-enabled" v-model="form.alert_enabled" />
+                                <Label for="airplane-mode">Enabled</Label>
+                            </div>
+
+                            <div class="w-full space-y-2">
+                                <Label for="alert_sentiment">Sentiment</Label>
+                                <div class="w-full">
+                                    <MultiSelectCombobox
+                                        id="alert_sentiment"
+                                        v-model="selectedSentiments"
+                                        :items="sentimentOptions"
+                                        placeholder="Choose sentiments..."
+                                        class-name="gap-2 w-full"
+                                    />
                                 </div>
+                                <p class="text-sm text-muted-foreground">
+                                    Select the sentiment types you want to monitor. You'll only get alerts for mentions that match your selected
+                                    sentiments.
+                                </p>
+                                <p v-if="form.errors.alert_sentiments" class="text-sm text-red-500">
+                                    {{ form.errors.alert_sentiments }}
+                                </p>
+                            </div>
+
+                            <div class="space-y-2">
+                                <Label for="alert_intent">Intent</Label>
+                                <MultiSelectCombobox
+                                    id="alert_intent"
+                                    v-model="selectedIntents"
+                                    :items="intentOptions"
+                                    placeholder="Choose intents..."
+                                    class-name="px-3 gap-2 w-full"
+                                />
+                                <p class="text-sm text-muted-foreground">
+                                    Select the intent types you want to monitor. You'll only get alerts for mentions that match your selected intents.
+                                </p>
+                                <p v-if="form.errors.alert_intents" class="text-sm text-red-500">
+                                    {{ form.errors.alert_intents }}
+                                </p>
+                            </div>
+
+                            <div class="space-y-2">
+                                <Label for="alert_channel">Channel</Label>
+                                <MultiSelectCombobox
+                                    id="alert_channel"
+                                    v-model="selectedMethods"
+                                    :items="methodOptions"
+                                    placeholder="Choose channels..."
+                                    class-name="px-3 gap-2 w-full"
+                                />
+                                <p class="text-sm text-muted-foreground">Select the channels you want to receive alerts on.</p>
+                                <p v-if="form.errors.alert_methods" class="text-sm text-red-500">
+                                    {{ form.errors.alert_methods }}
+                                </p>
                             </div>
                         </div>
-                        <p class="text-sm text-muted-foreground">You can only add up to 3 subreddits to a keyword</p>
                     </div>
 
-                    <!-- Settings -->
-                    <div class="space-y-4">
-                        <div class="flex items-center space-x-2">
-                            <Checkbox id="match_whole_word" v-model="form.match_whole_word" />
-                            <Label for="match_whole_word" class="text-sm"> Match exact word only (not parts of other words) </Label>
-                        </div>
-
-                        <div class="flex items-center space-x-2">
-                            <Checkbox id="case_sensitive" v-model="form.case_sensitive" />
-                            <Label for="case_sensitive" class="text-sm"> Match case exactly (e.g., "Word" ≠ "word") </Label>
-                        </div>
-                    </div>
-
-                    <DialogFooter>
+                    <DialogFooter class="bg-background pt-6">
                         <Button type="button" variant="outline" @click="closeModal"> Cancel </Button>
                         <Button type="submit" :disabled="form.processing">
                             <Loader2 v-if="form.processing" class="mr-2 h-4 w-4 animate-spin" />
                             {{ isEditing ? 'Update' : 'Add' }} Keyword
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+
+        <!-- Add/Edit Modal -->
+        <Dialog v-model:open="isPersonaModalOpen">
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>{{ isEditingPersona ? 'Edit' : 'Add' }} Persona</DialogTitle>
+                    <DialogDescription>Configure your persona settings.</DialogDescription>
+                </DialogHeader>
+
+                <form @submit.prevent="submitPersonaForm" class="scroll grid max-h-[90vh] w-full gap-6 overflow-y-auto">
+                    <!-- Persona Name -->
+                    <div class="space-y-2">
+                        <Label for="persona">Persona Name</Label>
+                        <Input id="persona" v-model="personaForm.name" placeholder="Enter name of persona" />
+                        <p v-if="personaForm.errors.name" class="text-sm text-red-500">
+                            {{ personaForm.errors.name }}
+                        </p>
+                    </div>
+
+                    <!-- User Type Selection -->
+                    <div class="w-full space-y-2">
+                        <Label for="user_type">User Type</Label>
+                        <Select v-model="personaForm.user_type" @update:modelValue="resetSettings as (value: typeof personaForm.user_type) => void">
+                            <SelectTrigger class="w-full">
+                                <SelectValue placeholder="Select user type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="small_business">Small Business</SelectItem>
+                                <SelectItem value="marketing">Marketing</SelectItem>
+                                <SelectItem value="content_creator">Content Creator</SelectItem>
+                                <SelectItem value="customer_support">Customer Support</SelectItem>
+                                <SelectItem value="market_researcher">Market Researcher</SelectItem>
+                                <SelectItem value="freelancer">Freelancer</SelectItem>
+                                <SelectItem value="pr_crisis">PR Crisis</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <p v-if="personaForm.errors.user_type" class="text-sm text-red-500">
+                            {{ personaForm.errors.user_type }}
+                        </p>
+                    </div>
+
+                    <!-- Dynamic Settings Based on User Type -->
+                    <div v-if="personaForm.user_type" class="space-y-4">
+                        <div>
+                            <h3 class="text-lg font-medium">Settings</h3>
+                            <p v-if="personaForm.errors.settings" class="text-sm text-red-500">
+                                {{ personaForm.errors.settings }}
+                            </p>
+                        </div>
+
+                        <!-- Small Business Settings -->
+                        <template v-if="personaForm.user_type === 'small_business'">
+                            <div class="grid grid-cols-1 gap-6">
+                                <div class="space-y-2">
+                                    <Label for="business_name">Business Name</Label>
+                                    <Input id="business_name" v-model="personaSettings.business_name" placeholder="e.g., ResumePro" />
+                                    <p v-if="getError('business_name')" class="text-sm text-red-500">
+                                        {{ getError('business_name') }}
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="business_description">Business Description</Label>
+                                    <Textarea
+                                        id="business_description"
+                                        v-model="personaSettings.business_description"
+                                        placeholder="Describe your business..."
+                                        rows="3"
+                                    />
+                                    <p v-if="getError('business_description')" class="text-sm text-red-500">
+                                        {{ getError('business_description') }}
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="industry_niche">Industry Niche</Label>
+                                    <Input id="industry_niche" v-model="personaSettings.industry_niche" placeholder="e.g., HR tech, e-commerce" />
+                                    <p v-if="getError('industry_niche')" class="text-sm text-red-500">
+                                        {{ getError('industry_niche') }}
+                                    </p>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Marketing Settings -->
+                        <template v-if="personaForm.user_type === 'marketing'">
+                            <div class="grid grid-cols-1 gap-6">
+                                <div class="space-y-2">
+                                    <Label for="brand_name">Brand Name</Label>
+                                    <Input id="brand_name" v-model="personaSettings.brand_name" placeholder="e.g., BrandX" />
+                                    <p v-if="getError('brand_name')" class="text-sm text-red-500">
+                                        {{ getError('brand_name') }}
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="brand_description">Brand Description</Label>
+                                    <Textarea
+                                        id="brand_description"
+                                        v-model="personaSettings.brand_description"
+                                        placeholder="Describe your brand..."
+                                        rows="3"
+                                    />
+                                    <p v-if="getError('brand_description')" class="text-sm text-red-500">
+                                        {{ getError('brand_description') }}
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="engagement_goal">Engagement Goal</Label>
+                                    <Select v-model="personaSettings.engagement_goal">
+                                        <SelectTrigger class="w-full">
+                                            <SelectValue placeholder="Select goal" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="brand_awareness">Brand Awareness</SelectItem>
+                                            <SelectItem value="reputation_management">Reputation Management</SelectItem>
+                                            <SelectItem value="market_research">Market Research</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <p v-if="getError('engagement_goal')" class="text-sm text-red-500">
+                                        {{ getError('engagement_goal') }}
+                                    </p>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Content Creator Settings -->
+                        <template v-if="personaForm.user_type === 'content_creator'">
+                            <div class="grid grid-cols-1 gap-6">
+                                <div class="space-y-2">
+                                    <Label for="creator_niche">Creator Niche</Label>
+                                    <Input id="creator_niche" v-model="personaSettings.creator_niche" placeholder="e.g., gaming, fitness" />
+                                    <p v-if="getError('creator_niche')" class="text-sm text-red-500">
+                                        {{ getError('creator_niche') }}
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="engagement_style">Engagement Style</Label>
+                                    <Select v-model="personaSettings.engagement_style">
+                                        <SelectTrigger class="w-full">
+                                            <SelectValue placeholder="Select style" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="storytelling">Storytelling</SelectItem>
+                                            <SelectItem value="question_asking">Question Asking</SelectItem>
+                                            <SelectItem value="sharing_tips">Sharing Tips</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <p v-if="getError('engagement_style')" class="text-sm text-red-500">
+                                        {{ getError('engagement_style') }}
+                                    </p>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Customer Support Settings -->
+                        <template v-if="personaForm.user_type === 'customer_support'">
+                            <div class="grid grid-cols-1 gap-6">
+                                <div class="space-y-2">
+                                    <Label for="brand_name">Brand Name</Label>
+                                    <Input id="brand_name" v-model="personaSettings.brand_name" placeholder="e.g., TechCorp" />
+                                    <p v-if="getError('brand_name')" class="text-sm text-red-500">
+                                        {{ getError('brand_name') }}
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="brand_description">Brand Description</Label>
+                                    <Textarea
+                                        id="brand_description"
+                                        v-model="personaSettings.brand_description"
+                                        placeholder="Describe your brand..."
+                                        rows="3"
+                                    />
+                                    <p v-if="getError('brand_description')" class="text-sm text-red-500">
+                                        {{ getError('brand_description') }}
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="product_service">Product/Service</Label>
+                                    <Input id="product_service" v-model="personaSettings.product_service" placeholder="e.g., ATS software" />
+                                    <p v-if="getError('product_service')" class="text-sm text-red-500">
+                                        {{ getError('product_service') }}
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="support_contact">Support Contact</Label>
+                                    <Input
+                                        id="support_contact"
+                                        v-model="personaSettings.support_contact"
+                                        placeholder="e.g., DM us, support@techcorp.com"
+                                    />
+                                    <p v-if="getError('support_contact')" class="text-sm text-red-500">
+                                        {{ getError('support_contact') }}
+                                    </p>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Market Researcher Settings -->
+                        <template v-if="personaForm.user_type === 'market_researcher'">
+                            <div class="grid grid-cols-1 gap-6">
+                                <div class="space-y-2">
+                                    <Label for="research_focus">Research Focus</Label>
+                                    <Input id="research_focus" v-model="personaSettings.research_focus" placeholder="e.g., electric vehicles" />
+                                    <p v-if="getError('research_focus')" class="text-sm text-red-500">
+                                        {{ getError('research_focus') }}
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="question_style">Question Style</Label>
+                                    <Select v-model="personaSettings.question_style">
+                                        <SelectTrigger class="w-full">
+                                            <SelectValue placeholder="Select style" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="open_ended">Open Ended</SelectItem>
+                                            <SelectItem value="specific">Specific</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <p v-if="getError('question_style')" class="text-sm text-red-500">
+                                        {{ getError('question_style') }}
+                                    </p>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Freelancer Settings -->
+                        <template v-if="personaForm.user_type === 'freelancer'">
+                            <div class="grid grid-cols-1 gap-6">
+                                <div class="space-y-2">
+                                    <Label for="expertise_area">Expertise Area</Label>
+                                    <Input id="expertise_area" v-model="personaSettings.expertise_area" placeholder="e.g., web design" />
+                                    <p v-if="getError('expertise_area')" class="text-sm text-red-500">
+                                        {{ getError('expertise_area') }}
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="engagement_approach">Engagement Approach</Label>
+                                    <Select v-model="personaSettings.engagement_approach">
+                                        <SelectTrigger class="w-full">
+                                            <SelectValue placeholder="Select approach" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="offering_tips">Offering Tips</SelectItem>
+                                            <SelectItem value="answering_questions">Answering Questions</SelectItem>
+                                            <SelectItem value="sharing_experiences">Sharing Experiences</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <p v-if="getError('engagement_approach')" class="text-sm text-red-500">
+                                        {{ getError('engagement_approach') }}
+                                    </p>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- PR Crisis Settings -->
+                        <template v-if="personaForm.user_type === 'pr_crisis'">
+                            <div class="grid grid-cols-1 gap-6">
+                                <div class="space-y-2">
+                                    <Label for="brand_name">Brand Name</Label>
+                                    <Input id="brand_name" v-model="personaSettings.brand_name" placeholder="e.g., BrandX" />
+                                    <p v-if="getError('brand_name')" class="text-sm text-red-500">
+                                        {{ getError('brand_name') }}
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="brand_description">Brand Description</Label>
+                                    <Textarea
+                                        id="brand_description"
+                                        v-model="personaSettings.brand_description"
+                                        placeholder="Describe your brand..."
+                                        rows="3"
+                                    />
+                                    <p v-if="getError('brand_description')" class="text-sm text-red-500">
+                                        {{ getError('brand_description') }}
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="escalation_contact">Escalation Contact</Label>
+                                    <Input id="escalation_contact" v-model="personaSettings.escalation_contact" placeholder="e.g., pr@brandx.com" />
+                                    <p v-if="getError('escalation_contact')" class="text-sm text-red-500">
+                                        {{ getError('escalation_contact') }}
+                                    </p>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <DialogFooter>
+                        <Button type="button" variant="outline" @click="closePersonaModal"> Cancel </Button>
+                        <Button type="submit" :disabled="personaForm.processing">
+                            <Loader2 v-if="personaForm.processing" class="mr-2 h-4 w-4 animate-spin" />
+                            {{ isEditingPersona ? 'Update' : 'Add' }} Persona
                         </Button>
                     </DialogFooter>
                 </form>
@@ -939,6 +1581,25 @@ const copyToClipboard = async (text: string) => {
                     <AlertDialogFooter>
                         <AlertDialogCancel @click="showDeleteKeywordDialog = false">Cancel</AlertDialogCancel>
                         <AlertDialogAction @click="deleteKeyword" :disabled="isLoading">
+                            {{ isLoading ? 'Deleting...' : 'Delete' }}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </Teleport>
+
+        <Teleport to="body">
+            <AlertDialog v-model:open="showDeletePersonaDialog" class="!z-50">
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Persona</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to delete this persona? This will remove it from your list of personas.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel @click="showDeleteKeywordDialog = false">Cancel</AlertDialogCancel>
+                        <AlertDialogAction @click="deletePersona" :disabled="isLoading">
                             {{ isLoading ? 'Deleting...' : 'Delete' }}
                         </AlertDialogAction>
                     </AlertDialogFooter>
@@ -1007,9 +1668,9 @@ const copyToClipboard = async (text: string) => {
 
                                 <div class="grid grid-cols-1 gap-1 text-start">
                                     <p class="text-xs text-muted-foreground">Keyword:</p>
-                                    <Badge class="bg-pink-500/10 text-pink-700 border-pink-500/20 dark:text-pink-300 dark:border-pink-500/30">
+                                    <Badge class="border-pink-500/20 bg-pink-500/10 text-pink-700 dark:border-pink-500/30 dark:text-pink-300">
                                         <span class="flex items-center gap-1.5 text-xs">
-                                            <div class="h-1.5 w-1.5 rounded-full bg-pink-500 animate-pulse"></div>
+                                            <div class="h-1.5 w-1.5 animate-pulse rounded-full bg-pink-500"></div>
                                             {{ selectedMention?.keyword }}
                                         </span>
                                     </Badge>
@@ -1073,7 +1734,7 @@ const copyToClipboard = async (text: string) => {
                             </div>
                         </div>
 
-                        <p v-if="selectedMention?.title" class="text-sm font-bold text-foreground text-start">
+                        <p v-if="selectedMention?.title" class="text-start text-sm font-bold text-foreground">
                             {{ selectedMention?.title }}
                         </p>
                     </DialogHeader>
@@ -1099,12 +1760,45 @@ const copyToClipboard = async (text: string) => {
                             <div class="flex items-start justify-between gap-4">
                                 <div class="flex-1">
                                     <div class="mb-3 flex items-start gap-2">
-                                        <MessageCircle class="mt-1 h-4 w-4 text-primary" />
-                                        <div>
-                                            <h3 class="text-sm font-semibold text-foreground">AI Suggested Reply</h3>
+                                        <MessageCircle class="w-12 text-primary" />
+                                        <div class="flex flex-col gap-2">
+                                            <div class="flex items-center gap-1">
+                                                <h3 class="text-sm font-semibold text-foreground">
+                                                    AI Suggested Reply
+                                                </h3>
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <span tabindex="-1"> <!-- Makes it unfocusable -->
+                                                                <Info class="w-4 h-4 text-muted-foreground" />
+                                                            </span>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent class="max-w-[300px] p-3 z-[100]">
+                                                            <div class="space-y-2">
+                                                                <template v-if="selectedMention?.persona">
+                                                                    <p class="text-lg mb-2 font-bold">
+                                                                        Persona
+                                                                    </p>
+                                                                    <div 
+                                                                        v-for="(value, key) in selectedMention.persona" 
+                                                                        :key="key"
+                                                                        class="break-words"
+                                                                    >
+                                                                        <span class="font-semibold capitalize text-sm">
+                                                                        {{ String(key).replace(/_/g, ' ') }}:
+                                                                        </span>
+                                                                        <p class="text-sm mt-0.5">
+                                                                        {{ typeof value === 'object' ? JSON.stringify(value) : value }}
+                                                                        </p>
+                                                                    </div>
+                                                                </template>
+                                                            </div>
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            </div>
                                             <p class="text-xs text-muted-foreground">
-                                                This reply was generated by AI based on the post content and its intent. Please review before using,
-                                                as it may not fit every situation.
+                                                This reply was generated by AI based on the post content and your selected persona. It’s crafted to feel like a real Reddit comment — with the tone, slang, casual phrasing, and even capitalization quirks you'd expect from actual users. Still, give it a quick review to make sure it fits how you want to sound.
                                             </p>
                                         </div>
                                     </div>
@@ -1119,7 +1813,7 @@ const copyToClipboard = async (text: string) => {
                                     variant="ghost"
                                     size="sm"
                                     @click="copyToClipboard(selectedMention?.suggested_reply)"
-                                    class="h-8 w-8 shrink-0 p-0 hover:bg-primary/10"
+                                    class="h-8 w-8 shrink-0 p-0"
                                 >
                                     <Copy class="h-4 w-4" />
                                 </Button>

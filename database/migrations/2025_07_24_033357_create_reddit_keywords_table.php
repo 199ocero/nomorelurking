@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->constrained();
             $table->foreignId('reddit_credential_id')->nullable()->constrained('reddit_credentials')->nullOnDelete();
+            $table->foreignId('persona_id')->constrained('personas');
             $table->string('reddit_id');
             $table->string('keyword');
             $table->json('subreddits')->nullable();
@@ -23,8 +24,8 @@ return new class extends Migration
             $table->boolean('case_sensitive')->default(false);
             $table->boolean('alert_enabled')->default(false);
             $table->json('alert_methods')->nullable();
-            $table->json('alert_sentiment')->nullable();
-            $table->json('alert_intent')->nullable();
+            $table->json('alert_sentiments')->nullable();
+            $table->json('alert_intents')->nullable();
             $table->timestamp('last_checked_at')->nullable();
             $table->timestamps();
         });

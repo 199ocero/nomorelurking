@@ -166,6 +166,9 @@ class ProcessSingleRedditPost implements ShouldQueue
     protected function processPost(RedditCredential $credential, RedditKeyword $keyword, array $post): bool
     {
         try {
+
+            $keyword->load('persona');
+
             if (! isset($post['data'])) {
                 return false;
             }
@@ -214,7 +217,7 @@ class ProcessSingleRedditPost implements ShouldQueue
             }
 
             try {
-                $analysis = $this->sentimentService->analyzeSentimentIntentAndReply($analysisContent, $keyword->keyword);
+                $analysis = $this->sentimentService->analyzeSentimentIntentAndReply($analysisContent, $keyword->keyword, $keyword->persona->settings, $keyword->persona->user_type);
             } catch (\Exception $e) {
                 Log::warning('Sentiment analysis failed, using defaults', [
                     'post_id' => $postId,
@@ -256,6 +259,7 @@ class ProcessSingleRedditPost implements ShouldQueue
                     ? Carbon::createFromTimestamp($postData['created_utc'])
                     : now(),
                 'found_at' => now(),
+                'persona' => $keyword->persona->settings,
             ];
 
             RedditMention::create($mentionData);

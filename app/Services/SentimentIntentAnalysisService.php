@@ -15,7 +15,7 @@ class SentimentIntentAnalysisService
      *
      * @return array ['sentiment' => string, 'sentiment_confidence' => float, 'intent' => string, 'intent_confidence' => float, 'suggested_reply' => string]
      */
-    public function analyzeSentimentIntentAndReply(string $content, string $keyword): array
+    public function analyzeSentimentIntentAndReply(string $content, string $keyword, array $settings, string $userType): array
     {
         try {
             // Clean and prepare content
@@ -26,13 +26,13 @@ class SentimentIntentAnalysisService
             }
 
             // Prepare the prompt for Gemini
-            $prompt = $this->buildAnalysisPrompt($cleanContent, $keyword);
+            $prompt = $this->buildAnalysisPrompt($cleanContent, $keyword, $settings, $userType);
 
             $generationConfig = new GenerationConfig(
-                temperature: 0.3,    // Slightly higher for more natural reply generation
-                topP: 0.8,           // Increased for better reply variety
-                topK: 40,            // Increased for more diverse responses
-                maxOutputTokens: 200, // Increased for suggested reply
+                temperature: 0.8,    // Increased for creativity
+                topP: 0.95,          // Wider probability sampling
+                topK: 50,            // More token options
+                maxOutputTokens: 300, // Longer replies
                 responseMimeType: ResponseMimeType::APPLICATION_JSON
             );
 
@@ -67,79 +67,199 @@ class SentimentIntentAnalysisService
     }
 
     /**
-     * Analyze sentiment, intent, and generate replies for multiple texts in batch
-     */
-    public function analyzeBatchSentimentIntentAndReply(array $contents, string $keyword): array
-    {
-        $results = [];
-
-        foreach ($contents as $index => $content) {
-            $results[$index] = $this->analyzeSentimentIntentAndReply($content, $keyword);
-
-            // Add small delay to respect rate limits
-            if (count($contents) > 1) {
-                usleep(300000); // 0.3 second delay (increased due to longer processing)
-            }
-        }
-
-        return $results;
-    }
-
-    /**
      * Build the comprehensive analysis prompt for Gemini
      */
-    protected function buildAnalysisPrompt(string $content, string $keyword, string $subreddit = ''): string
+    protected function buildAnalysisPrompt(string $content, string $keyword, array $settings, string $userType): string
     {
-        return 'You are a world-class sentiment analysis, intent detection, and professional response generation model. Analyze the given text and provide a suggested reply tailored to the Reddit community context.
+        $basePrompt = 'You are a world-class sentiment analysis, intent detection, and professional response generation model. Analyze the given text and provide a suggested reply tailored to the Reddit community context.';
+
+        $basePrompt .= $this->buildPersonalizationContext($settings, $userType);
+
+        return $basePrompt.'
 
         Respond ONLY with this JSON format:
         {
-          "sentiment": "positive",         // Only "positive", "negative", or "neutral"
-          "sentiment_confidence": 0.91,    // Float between 0.0 and 1.0 showing sentiment certainty
-          "intent": "lead",                // One of the intent types below
-          "intent_confidence": 0.88,       // Float between 0.0 and 1.0 showing intent certainty
-          "suggested_reply": "Thanks for sharing, that sounds interesting! ..."  // Reddit-style reply mimicking typical user tone
+        "sentiment": "positive",         // Only "positive", "negative", or "neutral"
+        "sentiment_confidence": 0.91,    // Float between 0.0 and 1.0 showing sentiment certainty
+        "intent": "lead",                // One of the intent types below
+        "intent_confidence": 0.88,       // Float between 0.0 and 1.0 showing intent certainty
+        "suggested_reply": "Thanks for sharing, that sounds interesting! ..."  // Reddit-style reply mimicking typical user tone
         }
 
         Intent types:
         - lead: Shows potential customer interest, seeking recommendations/solutions (e.g., "Any tools like this?").
         - competitor: Mentions competing products/services, comparisons (e.g., "This is good, but X is better").
-        - brand_mention: References the brand/keyword without clear intent (e.g., "I saw this on [brand]’s page").
+        - brand_mention: References the brand/keyword without clear intent (e.g., "I saw this on [brand]\'s page").
         - feedback: Reviews, complaints, experiences with products/services (e.g., "This broke after a week").
         - hiring_opportunity: Job postings, recruitment discussions (e.g., "Hiring devs for my startup").
         - irrelevant: Unrelated to business context or keyword (e.g., "Lol, this reminds me of a meme").
 
-        Reply Guidelines Based on Intent:
-        - lead: Friendly, helpful, and engaging; offer concise suggestions or ask clarifying questions (e.g., "Have you checked out [tool]? What features are you looking for?").
-        - competitor: Acknowledge comparisons respectfully, highlight unique features casually without sounding salesy (e.g., "Yeah, X is solid, but [brand] has this cool feature too").
-        - brand_mention: Thank the user warmly, share brief context or value related to the brand (e.g., "Glad you spotted that! [Brand]’s been doing some cool stuff lately").
-        - feedback: Address concerns empathetically, offer practical help or solutions, avoid defensiveness (e.g., "Sorry to hear that happened, can you DM me details so we can help?").
-        - hiring_opportunity: Express interest professionally but conversationally, highlight relevant skills briefly (e.g., "That sounds awesome! I’ve got experience in [skill], mind sharing more?").
-        - irrelevant: Politely acknowledge or use light humor to steer back to topic if possible (e.g., "Haha, love the meme vibe, but any thoughts on [keyword]?").
+        CRITICAL REPLY REQUIREMENTS:
+        
+        1. NEVER sound corporate, promotional, or salesy
+        2. When mentioning brands/tools, do it casually like a satisfied user would ("tried X recently and its been pretty solid")
+        3. Use mostly casual typing with some lowercase, but don\'t force it everywhere
+        4. Include some contractions and informal language, but keep it readable (you/ur, really/rly mix is fine)
+        5. Sound like a regular Reddit user, not a brand representative
+        6. Be helpful but in a peer-to-peer way, not customer service way
+        7. Sound conversational but readable - mix of casual and proper grammar
+        8. Don\'t overuse slang - sprinkle it in naturally, not every sentence
+        9. NOT use the dashes in the sentence
+        10. Start with standard capitalization then mix in lowercase naturally - like "Yeah that sucks. i ran into the same issue last month. The free tier is usually trash but..."
 
-        Reply Style Requirements:
-        - Casual, conversational, and subreddit-appropriate—mimic typical Reddit user phrasing for the given community (e.g., technical for r/dataisbeautiful, supportive for r/socialskills).
-        - Reddit-appropriate length (2-4 sentences, ~30-80 words).
-        - Avoid corporate jargon; use contractions, colloquialisms, and simple language (e.g., "That’s awesome" instead of "That is highly commendable").
-        - Use proper grammar but allow relaxed phrasing (e.g., "gonna" or "kinda" where natural).
-        - Include tone indicators (e.g., /s, /j) sparingly when sarcasm or joking is used to avoid misinterpretation, especially in neurodivergent-friendly communities.
-        - Incorporate mild humor, wit, or light sarcasm only if contextually appropriate and aligned with subreddit norms.
-        - Include engagement prompts (e.g., questions, calls to action) to encourage discussion, tailored to the subreddit’s style.
-        - Reflect internet culture nuances, such as subreddit-specific slang or humor, while keeping replies clear and accessible.
+        MANDATORY Reply Style Examples - YOUR REPLY MUST MATCH THESE PATTERNS:
+
+        For LEADS (when someone asks for recommendations):
+        ❌ BAD: "As [Brand], we offer great features for this use case. Check us out!"
+        ✅ GOOD: "Finding good tools for this is tough. I\'ve tried a bunch and most are either too expensive or don\'t work well. Been using Aplymee recently and it\'s been pretty solid - decent free tier and actually does what it says. Worth checking out if you\'re still looking"
+
+        For COMPLAINTS/FEEDBACK:
+        ❌ BAD: "We apologize for your experience. Please contact our support team."
+        ✅ GOOD: "Oh that sucks, I\'ve had similar issues with other tools too. It\'s frustrating when stuff just breaks. If you\'re using Aplymee, try clearing your cache first - sometimes that fixes weird bugs. Their support is actually pretty responsive if nothing else works"
+
+        For COMPETITOR MENTIONS:
+        ❌ BAD: "While [Competitor] is good, our solution offers better features."
+        ✅ GOOD: "Yeah [competitor] is decent but gets pricey pretty quick. I\'ve been trying different options lately and some of the newer ones are actually solid. Really depends what you\'re looking for though - what features do you need most?"
+
+        For GENERAL BRAND MENTIONS:
+        ❌ BAD: "Thank you for mentioning our brand! We appreciate the feedback."
+        ✅ GOOD: "Nice! Yeah I\'ve been seeing that one pop up more lately. How do you like it so far? Been thinking about trying it myself but haven\'t had time to test it out properly"
+
+        Style Matching Requirements:
+        - Use patterns from the 10 reply styles provided above
+        - Match the casual, conversational tone exactly
+        - Use PROPER CAPITALIZATION at the start of sentences (like "Yeah that\'s annoying" not "yeah thats annoying")
+        - Mix casual elements naturally - some contractions (you\'re/your, it\'s/its) but don\'t force every word
+        - Sound like a helpful community member, not a business
+        - Be subtly helpful without being pushy or promotional
+
+        CAPITALIZATION RULE: Start sentences with capital letters. Use normal punctuation. Only go lowercase for emphasis or very casual moments, not as the default.
 
         Analysis Instructions:
         - Detect sarcasm, slang, and tone nuances typical in Reddit conversations, considering subreddit context (e.g., r/science vs. r/Showerthoughts).
         - Analyze tone holistically, accounting for mixed or ambiguous sentiment, and prioritize keyword relevance for intent.
         - Consider subreddit norms (e.g., analytical in r/science, empathetic in r/socialskills) when assessing tone and crafting replies.
-        - Weight the provided keyword strongly in intent assessment but adapt tone to fit Reddit’s informal, community-driven style.
+        - Weight the provided keyword strongly in intent assessment but adapt tone to fit Reddit\'s informal, community-driven style.
         - If sarcasm or tone is unclear, err on the side of neutral sentiment and clarify intent in the reply.
-        - Use the subreddit context (if provided) to tailor the tone and content of the reply.
+
+        FINAL REMINDER: Your suggested_reply should sound natural and conversational - like a helpful person on Reddit, not overly slangy or forced. Use normal capitalization and punctuation most of the time, with casual elements sprinkled in naturally.
 
         Text to analyze: "'.addslashes($content).'"
         Keyword context: "'.addslashes($keyword).'"
-        Subreddit context: "'.addslashes($subreddit).'"
 
         Return only the JSON object with no additional text or formatting.';
+    }
+
+    /**
+     * Build personalization context based on user settings and user type
+     */
+    private function buildPersonalizationContext(array $settings, string $userType): string
+    {
+        $context = "\n\nPersonalization Context:\n";
+        $context .= "- User Type: {$userType}\n";
+
+        // Handle settings based on user type
+        switch ($userType) {
+            case 'small_business':
+                if (isset($settings['business_name'])) {
+                    $context .= "- You are familiar with '{$settings['business_name']}'".
+                        (isset($settings['business_description']) ? " ({$settings['business_description']})" : '').
+                        " and can casually mention it as a helpful option when relevant.\n";
+                }
+                if (isset($settings['industry_niche'])) {
+                    $context .= "- You have experience in {$settings['industry_niche']} industry.\n";
+                }
+                $context .= "- When appropriate, naturally suggest this business as someone who has used/heard good things about it.\n";
+                break;
+
+            case 'marketing':
+                if (isset($settings['brand_name'])) {
+                    $context .= "- You are a satisfied user/fan of '{$settings['brand_name']}'".
+                        (isset($settings['brand_description']) ? " ({$settings['brand_description']})" : '').
+                        " and can recommend it naturally when it fits.\n";
+                }
+                if (isset($settings['engagement_goal'])) {
+                    $goalMap = [
+                        'brand_awareness' => 'casually mention the brand when it genuinely helps the conversation',
+                        'reputation_management' => 'share positive experiences with the brand when relevant',
+                        'market_research' => 'ask follow-up questions to understand user needs better',
+                    ];
+                    $context .= "- Approach: {$goalMap[$settings['engagement_goal']]}\n";
+                }
+                break;
+
+            case 'content_creator':
+                if (isset($settings['creator_niche'])) {
+                    $context .= "- You create content in the {$settings['creator_niche']} space.\n";
+                }
+                if (isset($settings['engagement_style'])) {
+                    $styleMap = [
+                        'storytelling' => 'share relevant experiences and stories from your content creation journey',
+                        'question_asking' => 'ask engaging questions to understand what content would help',
+                        'sharing_tips' => 'offer practical tips based on your content creation experience',
+                    ];
+                    $context .= "- Your style: {$styleMap[$settings['engagement_style']]}\n";
+                }
+                break;
+
+            case 'customer_support':
+                if (isset($settings['brand_name'])) {
+                    $context .= "- You are a power user of '{$settings['brand_name']}'".
+                        (isset($settings['brand_description']) ? " ({$settings['brand_description']})" : '').
+                        " and know it really well.\n";
+                }
+                if (isset($settings['product_service'])) {
+                    $context .= "- You have extensive experience with {$settings['product_service']}.\n";
+                }
+                if (isset($settings['support_contact'])) {
+                    $context .= "- For serious issues, you can casually mention contacting {$settings['support_contact']}.\n";
+                }
+                $context .= "- When the tool/service could help, naturally recommend it based on your positive experience.\n";
+                break;
+
+            case 'market_researcher':
+                if (isset($settings['research_focus'])) {
+                    $context .= "- You are researching {$settings['research_focus']} trends.\n";
+                }
+                if (isset($settings['question_style'])) {
+                    $styleMap = [
+                        'open_ended' => 'ask broad questions to understand the bigger picture',
+                        'specific' => 'ask specific follow-up questions about their exact needs',
+                    ];
+                    $context .= "- Your approach: {$styleMap[$settings['question_style']]}\n";
+                }
+                break;
+
+            case 'freelancer':
+                if (isset($settings['expertise_area'])) {
+                    $context .= "- You freelance in {$settings['expertise_area']} and have practical experience.\n";
+                }
+                if (isset($settings['engagement_approach'])) {
+                    $approachMap = [
+                        'offering_tips' => 'share practical tips from your freelancing experience',
+                        'answering_questions' => 'provide detailed answers based on your professional experience',
+                        'sharing_experiences' => 'relate your own freelancing stories and lessons learned',
+                    ];
+                    $context .= "- Your natural way: {$approachMap[$settings['engagement_approach']]}\n";
+                }
+                break;
+
+            case 'pr_crisis':
+                if (isset($settings['brand_name'])) {
+                    $context .= "- You are familiar with '{$settings['brand_name']}'".
+                        (isset($settings['brand_description']) ? " ({$settings['brand_description']})" : '').
+                        " and want to help with any concerns.\n";
+                }
+                if (isset($settings['escalation_contact'])) {
+                    $context .= "- For serious issues, you know they can reach out to {$settings['escalation_contact']}.\n";
+                }
+                $context .= "- When helpful, casually mention the brand's efforts to address issues.\n";
+                break;
+        }
+
+        $context .= "\nIMPORTANT: Weave this context naturally into your reply. Don't force it, but when the conversation genuinely calls for it, draw on this background knowledge in a casual, helpful way.\n";
+
+        return $context;
     }
 
     /**

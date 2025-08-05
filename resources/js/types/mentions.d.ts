@@ -17,6 +17,7 @@ export interface RedditKeyword {
     user_id: number;
     reddit_credential_id: number;
     reddit_id: string;
+    persona_id: number;
     keyword: string;
     subreddits: string[];
     scan_comments: boolean;
@@ -24,8 +25,8 @@ export interface RedditKeyword {
     case_sensitive: boolean;
     alert_enabled: boolean;
     alert_methods: string[];
-    alert_sentiment: string[];
-    alert_intent: string[];
+    alert_sentiments: string[];
+    alert_intents: string[];
     last_checked_at: string | null;
 }
 
@@ -54,6 +55,7 @@ export interface RedditMention {
     suggested_reply: string | null;
     reddit_created_at: string;
     found_at: string;
+    persona: [];
 }
 
 export interface SubredditResult {
@@ -68,4 +70,51 @@ export interface LastFetch {
     reddit_credential_id: number;
     dispatch_at: string | null;
     last_fetched_at: string | null;
+}
+
+// Updated interface for dynamic settings
+export interface PersonaSettings {
+    [key: string]: string | undefined;
+    
+    // Small Business
+    business_name?: string;
+    industry_niche?: string;
+    business_description?: string;
+    
+    // Marketing & Customer Support & PR Crisis
+    brand_name?: string;
+    brand_description?: string;
+    
+    // Marketing specific
+    engagement_goal?: 'brand_awareness' | 'reputation_management' | 'market_research';
+    
+    // Content Creator
+    creator_niche?: string;
+    engagement_style?: 'storytelling' | 'question_asking' | 'sharing_tips';
+    
+    // Customer Support
+    product_service?: string;
+    support_contact?: string;
+    
+    // Market Researcher
+    research_focus?: string;
+    question_style?: 'open_ended' | 'specific';
+    
+    // Freelancer
+    expertise_area?: string;
+    engagement_approach?: 'offering_tips' | 'answering_questions' | 'sharing_experiences';
+    
+    // PR Crisis
+    escalation_contact?: string;
+    
+    // Common tone settings
+    preferred_tone?: string;
+}
+
+export interface Persona {
+    id: number;
+    name: string;
+    user_id: number;
+    user_type: 'small_business' | 'marketing' | 'content_creator' | 'customer_support' | 'market_researcher' | 'freelancer' | 'pr_crisis';
+    settings: PersonaSettings;
 }

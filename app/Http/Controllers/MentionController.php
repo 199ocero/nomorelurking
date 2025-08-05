@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\MonitorRedditKeywords;
 use App\Models\LastFetch;
+use App\Models\Persona;
 use App\Models\RedditCredential;
 use App\Models\RedditKeyword;
 use App\Models\RedditMention;
@@ -28,15 +29,15 @@ class MentionController extends Controller
     public function index(Request $request)
     {
 
-        // Get all credentials for the user
         $credentials = RedditCredential::where('user_id', Auth::id())
             ->select('id', 'username', 'reddit_id', 'token_expires_at')
             ->first();
 
-        // Get all keywords for the user with only the needed fields
         $keywords = null;
 
         $mentions = null;
+
+        $personas = null;
 
         $lastFetch = null;
 
@@ -50,6 +51,7 @@ class MentionController extends Controller
                     'user_id',
                     'reddit_credential_id',
                     'reddit_id',
+                    'persona_id',
                     'keyword',
                     'subreddits',
                     'scan_comments',
@@ -57,8 +59,8 @@ class MentionController extends Controller
                     'case_sensitive',
                     'alert_enabled',
                     'alert_methods',
-                    'alert_sentiment',
-                    'alert_intent',
+                    'alert_sentiments',
+                    'alert_intents',
                     'last_checked_at',
                 ])
                 ->get();
@@ -91,6 +93,18 @@ class MentionController extends Controller
                     'suggested_reply',
                     'reddit_created_at',
                     'found_at',
+                    'persona',
+                ])
+                ->get();
+
+            $personas = Persona::query()
+                ->where('user_id', Auth::id())
+                ->select([
+                    'id',
+                    'name',
+                    'user_id',
+                    'user_type',
+                    'settings',
                 ])
                 ->get();
 
@@ -109,6 +123,7 @@ class MentionController extends Controller
         return Inertia::render('Mentions', [
             'keywords' => $keywords ?? [],
             'mentions' => $mentions ?? [],
+            'personas' => $personas ?? [],
             'credentials' => $credentials ? [
                 'id' => $credentials->id,
                 'reddit_id' => $credentials->reddit_id,
@@ -140,6 +155,11 @@ class MentionController extends Controller
             'match_whole_word' => 'boolean',
             'case_sensitive' => 'boolean',
             'reddit_id' => 'string|max:255',
+            'persona_id' => 'required|integer:exists:personas,id',
+            'alert_enabled' => 'boolean',
+            'alert_methods' => 'required|array',
+            'alert_sentiments' => 'required|array',
+            'alert_intents' => 'required|array',
         ]);
 
         $validated['user_id'] = Auth::id();
@@ -228,6 +248,12 @@ class MentionController extends Controller
             'scan_comments' => 'boolean',
             'match_whole_word' => 'boolean',
             'case_sensitive' => 'boolean',
+            'reddit_id' => 'string|max:255',
+            'persona_id' => 'required|integer:exists:personas,id',
+            'alert_enabled' => 'boolean',
+            'alert_methods' => 'required|array',
+            'alert_sentiments' => 'required|array',
+            'alert_intents' => 'required|array',
         ]);
 
         $keyword->update($validated);
