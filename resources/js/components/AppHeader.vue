@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import AppLogo from '@/components/AppLogo.vue';
-import AppLogoIcon from '@/components/AppLogoIcon.vue';
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { NavigationMenu, NavigationMenuItem, NavigationMenuList, navigationMenuTriggerStyle } from '@/components/ui/navigation-menu';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import UserMenuContent from '@/components/UserMenuContent.vue';
 import { getInitials } from '@/composables/useInitials';
 import type { BreadcrumbItem, NavItem } from '@/types';
@@ -25,7 +24,11 @@ const props = withDefaults(defineProps<Props>(), {
 const page = usePage();
 const auth = computed(() => page.props.auth);
 
-const isCurrentRoute = computed(() => (url: string) => page.url === url);
+const isCurrentRoute = computed(() => (url: string) => {
+    const basePageUrl = page.url.split('#')[0];
+    const baseCompareUrl = url.split('#')[0];
+    return basePageUrl === baseCompareUrl;
+});
 
 const activeItemStyles = computed(
     () => (url: string) => (isCurrentRoute.value(url) ? 'text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100' : ''),
@@ -67,9 +70,7 @@ const mainNavItems: NavItem[] = [
                         </SheetTrigger>
                         <SheetContent side="left" class="w-[300px] p-6">
                             <SheetTitle class="sr-only">Navigation Menu</SheetTitle>
-                            <SheetHeader class="flex justify-start text-left">
-                                <AppLogoIcon class="size-6 fill-current text-black dark:text-white" />
-                            </SheetHeader>
+                            <AppLogo />
                             <div class="flex h-full flex-1 flex-col justify-between space-y-4 py-6">
                                 <nav class="-mx-3 space-y-1">
                                     <Link

@@ -53,14 +53,8 @@ import {
     X,
     Info,
 } from 'lucide-vue-next';
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, CSSProperties, reactive, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger
-} from '@/components/ui/tooltip'
 
 interface Props {
     keywords: RedditKeyword[];
@@ -587,6 +581,21 @@ const methodOptions = [
 const selectedSentiments = ref<string[]>([]);
 const selectedIntents = ref<string[]>([]);
 const selectedMethods = ref<string[]>([]);
+
+const showTooltip = ref(false);
+const triggerRef = ref<HTMLElement>();
+
+const tooltipPosition = computed<CSSProperties>(() => {
+    if (!triggerRef.value) return {};
+
+    const rect = triggerRef.value.getBoundingClientRect();
+    return {
+        position: 'fixed',
+        top: `${rect.top - 8}px`,
+        left: `${rect.left + rect.width / 2}px`,
+        transform: 'translate(-50%, -100%)',
+    };
+});
 </script>
 
 <template>
@@ -1047,13 +1056,11 @@ const selectedMethods = ref<string[]>([]);
                                 <div class="flex items-center justify-between">
                                     <div class="flex items-center gap-3">
                                         <div class="h-2 w-2 shrink-0 rounded-full bg-green-500" />
-                                        <div class="flex gap-1 items-center">
+                                        <div class="flex items-center gap-1">
                                             <h3 class="font-medium text-foreground">
                                                 {{ persona.name }}
                                             </h3>
-                                            <p class="text-xs text-muted-foreground">
-                                                - {{ persona.user_type }}
-                                            </p>
+                                            <p class="text-xs text-muted-foreground">- {{ persona.user_type }}</p>
                                         </div>
                                     </div>
 
@@ -1180,7 +1187,9 @@ const selectedMethods = ref<string[]>([]);
                                 </SelectContent>
                             </Select>
                             <p class="text-sm text-muted-foreground">
-                                Your persona helps us understand your preferences and give more context about you. This lets us generate replies that are more relevant, helpful, and tailored to your needs. You can create or update your persona anytime in Configure → Persona.
+                                Your persona helps us understand your preferences and give more context about you. This lets us generate replies that
+                                are more relevant, helpful, and tailored to your needs. You can create or update your persona anytime in Configure →
+                                Persona.
                             </p>
                             <p v-if="form.errors.persona_id" class="text-sm text-red-500">
                                 {{ form.errors.persona_id }}
@@ -1763,42 +1772,49 @@ const selectedMethods = ref<string[]>([]);
                                         <MessageCircle class="w-12 text-primary" />
                                         <div class="flex flex-col gap-2">
                                             <div class="flex items-center gap-1">
-                                                <h3 class="text-sm font-semibold text-foreground">
-                                                    AI Suggested Reply
-                                                </h3>
-                                                <TooltipProvider>
-                                                    <Tooltip>
-                                                        <TooltipTrigger asChild>
-                                                            <span tabindex="-1"> <!-- Makes it unfocusable -->
-                                                                <Info class="w-4 h-4 text-muted-foreground" />
-                                                            </span>
-                                                        </TooltipTrigger>
-                                                        <TooltipContent class="max-w-[300px] p-3 z-[100]">
+                                                <h3 class="text-sm font-semibold text-foreground">AI Suggested Reply</h3>
+                                                <div class="group relative inline-block" ref="triggerRef">
+                                                    <span
+                                                        class="inline-flex cursor-pointer items-center"
+                                                        @mouseenter="showTooltip = true"
+                                                        @mouseleave="showTooltip = false"
+                                                    >
+                                                        <Info class="h-4 w-4 text-muted-foreground" />
+                                                    </span>
+
+                                                    <!-- Teleport tooltip to body -->
+                                                    <Teleport to="body">
+                                                        <div
+                                                            v-if="showTooltip"
+                                                            class="absolute z-[9999] max-w-[300px] rounded-lg border border-border bg-popover px-3 py-2 shadow-lg transition-all duration-200 ease-in-out"
+                                                            :style="tooltipPosition"
+                                                        >
                                                             <div class="space-y-2">
                                                                 <template v-if="selectedMention?.persona">
-                                                                    <p class="text-lg mb-2 font-bold">
-                                                                        Persona
-                                                                    </p>
-                                                                    <div 
-                                                                        v-for="(value, key) in selectedMention.persona" 
+                                                                    <p class="mb-2 text-lg font-bold text-popover-foreground">Persona</p>
+                                                                    <div
+                                                                        v-for="(value, key) in selectedMention.persona"
                                                                         :key="key"
                                                                         class="break-words"
                                                                     >
-                                                                        <span class="font-semibold capitalize text-sm">
-                                                                        {{ String(key).replace(/_/g, ' ') }}:
+                                                                        <span class="text-sm font-semibold text-popover-foreground capitalize">
+                                                                            {{ String(key).replace(/_/g, ' ') }}:
                                                                         </span>
-                                                                        <p class="text-sm mt-0.5">
-                                                                        {{ typeof value === 'object' ? JSON.stringify(value) : value }}
+                                                                        <p class="mt-0.5 text-sm text-muted-foreground">
+                                                                            {{ typeof value === 'object' ? JSON.stringify(value) : value }}
                                                                         </p>
                                                                     </div>
                                                                 </template>
                                                             </div>
-                                                        </TooltipContent>
-                                                    </Tooltip>
-                                                </TooltipProvider>
+                                                        </div>
+                                                    </Teleport>
+                                                </div>
                                             </div>
                                             <p class="text-xs text-muted-foreground">
-                                                This reply was generated by AI based on the post content and your selected persona. It’s crafted to feel like a real Reddit comment — with the tone, slang, casual phrasing, and even capitalization quirks you'd expect from actual users. Still, give it a quick review to make sure it fits how you want to sound.
+                                                This reply was generated by AI based on the post content and your selected persona. It’s crafted to
+                                                feel like a real Reddit comment — with the tone, slang, casual phrasing, and even capitalization
+                                                quirks you'd expect from actual users. Still, give it a quick review to make sure it fits how you want
+                                                to sound.
                                             </p>
                                         </div>
                                     </div>
